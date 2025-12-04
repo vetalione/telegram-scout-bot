@@ -508,15 +508,26 @@ process.on('SIGINT', async () => {
 });
 
 // Запуск сервера
-app.listen(PORT, async () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📱 Bot started`);
-    console.log(`🌐 Web interface: http://localhost:${PORT}`);
+async function startServer() {
+    // Инициализируем базу данных
+    await database.initDatabase();
+    console.log('📦 Database initialized');
     
-    // Восстанавливаем мониторинг для активных пользователей
-    setTimeout(async () => {
-        await monitor.restoreAllMonitoring();
-    }, 5000);
+    app.listen(PORT, async () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`📱 Bot started`);
+        console.log(`🌐 Web interface: http://localhost:${PORT}`);
+        
+        // Восстанавливаем мониторинг для активных пользователей
+        setTimeout(async () => {
+            await monitor.restoreAllMonitoring();
+        }, 5000);
+    });
+}
+
+startServer().catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
 });
 
 module.exports = app;
