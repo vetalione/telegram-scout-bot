@@ -1,5 +1,1 @@
-[build]
-  command = "npm install"
-
-[start]
-  command = "npm start"
+web: npm start
