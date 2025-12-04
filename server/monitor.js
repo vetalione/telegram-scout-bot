@@ -363,12 +363,12 @@ class TelegramMonitor {
      */
     async startMonitoring(userId) {
         try {
-            const user = database.users.getById(userId);
+            const user = await database.users.getById(userId);
             if (!user) {
                 throw new Error('User not found');
             }
 
-            const settings = database.monitors.getByUserId(userId);
+            const settings = await database.monitors.getByUserId(userId);
             if (!settings) {
                 throw new Error('Monitor settings not found');
             }
@@ -391,9 +391,9 @@ class TelegramMonitor {
             }
 
             // Сохраняем чаты в БД
-            database.chats.deleteByUserId(userId);
+            await database.chats.deleteByUserId(userId);
             for (const chat of chatsResult.chats) {
-                database.chats.add(userId, chat.id, chat.title, chat.type);
+                await database.chats.add(userId, chat.id, chat.title, chat.type);
             }
 
             // Получаем ID чатов для мониторинга
@@ -424,7 +424,7 @@ class TelegramMonitor {
             client._scoutHandler = handler;
 
             // Активируем пользователя
-            database.users.setActive(userId, true);
+            await database.users.setActive(userId, true);
 
             return {
                 success: true,
@@ -450,6 +450,9 @@ class TelegramMonitor {
             const msgPreview = message.message?.substring(0, 100) || '[empty]';
             console.log(`[Monitor] New message for user ${userId}: "${msgPreview}"`);
             
+            // Считаем обработанное сообщение
+            await database.stats.increment('messages_processed');
+            
             // Пропускаем сервисные сообщения
             if (!message.message || message.message.length === 0) {
                 console.log(`[Monitor] Skipping: empty message`);
@@ -458,7 +461,7 @@ class TelegramMonitor {
             
             // ВАЖНО: Загружаем свежие данные пользователя из БД
             // чтобы получить актуальный bot_chat_id (мог обновиться после /start)
-            const user = database.users.getById(userId);
+            const user = await database.users.getById(userId);
             if (!user) {
                 console.log(`[Monitor] User ${userId} not found in DB`);
                 return;
@@ -481,6 +484,9 @@ class TelegramMonitor {
             }
             
             console.log(`[Monitor] ✓ Match found! Sending notification...`);
+            
+            // Считаем найденное совпадение
+            await database.stats.increment('matches_found');
 
             // Проверяем, не отправляли ли мы уже это уведомление
             const chatId = message.peerId?.channelId?.toString() || 
@@ -488,7 +494,7 @@ class TelegramMonitor {
                           message.chatId?.toString();
             const messageId = message.id.toString();
 
-            if (database.notifications.exists(userId, chatId, messageId)) {
+            if (await database.notifications.exists(userId, chatId, messageId)) {
                 return;
             }
 
@@ -532,7 +538,10 @@ class TelegramMonitor {
                     console.log(`[Monitor] ✓ Notification sent to ${user.bot_chat_id}`);
 
                     // Сохраняем информацию об отправленном уведомлении
-                    database.notifications.add(userId, chatId, messageId);
+                    await database.notifications.add(userId, chatId, messageId);
+                    
+                    // Считаем отправленное уведомление
+                    await database.stats.increment('notifications_sent');
                 } catch (sendError) {
                     console.error(`[Monitor] Failed to send notification:`, sendError.message);
                 }
@@ -559,8 +568,8 @@ class TelegramMonitor {
                 this.clients.delete(userId);
             }
 
-            database.users.setActive(userId, false);
-            database.monitors.setActive(userId, false);
+            await database.users.setActive(userId, false);
+            await database.monitors.setActive(userId, false);
 
             return { success: true };
         } catch (error) {
@@ -575,7 +584,7 @@ class TelegramMonitor {
     async restoreAllMonitoring() {
         console.log('Restoring monitoring for active users...');
         
-        const activeUsers = database.users.getAllActive();
+        const activeUsers = await database.users.getAllActive();
         console.log(`Found ${activeUsers.length} active users in database:`, 
             activeUsers.map(u => ({ id: u.id, phone: u.phone, hasSession: !!u.session_string })));
         

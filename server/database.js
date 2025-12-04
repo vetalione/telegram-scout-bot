@@ -1,244 +1,276 @@
-const initSqlJs = require('sql.js');
-const path = require('path');
-const fs = require('fs');
+const { Pool } = require('pg');
 
-// Создаем папку data если её нет
-const dataDir = path.join(__dirname, '..', 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
+// Подключение к PostgreSQL
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-const dbPath = path.join(dataDir, 'scout.db');
-
-let db = null;
-let SQL = null;
 let isInitialized = false;
 
 // Инициализация базы данных
 async function initDatabase() {
-    if (isInitialized && db) return db;
+    if (isInitialized) return;
     
-    SQL = await initSqlJs();
-    
-    // Загружаем существующую БД или создаем новую
+    const client = await pool.connect();
     try {
-        if (fs.existsSync(dbPath)) {
-            const fileBuffer = fs.readFileSync(dbPath);
-            db = new SQL.Database(fileBuffer);
-        } else {
-            db = new SQL.Database();
-        }
-    } catch (e) {
-        db = new SQL.Database();
+        // Создаем таблицы
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                telegram_user_id TEXT UNIQUE,
+                telegram_username TEXT,
+                phone TEXT,
+                api_id TEXT,
+                api_hash TEXT,
+                session_string TEXT,
+                bot_chat_id TEXT,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS monitor_settings (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                folder_name TEXT NOT NULL,
+                keywords TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                monitoring_started_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS monitored_chats (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                chat_id TEXT NOT NULL,
+                chat_title TEXT,
+                chat_type TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, chat_id)
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sent_notifications (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                chat_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, chat_id, message_id)
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                id TEXT PRIMARY KEY,
+                phone TEXT,
+                api_id TEXT,
+                api_hash TEXT,
+                phone_code_hash TEXT,
+                step TEXT DEFAULT 'phone',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP
+            )
+        `);
+
+        // Таблица для всех кто нажал /start (для статистики)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS bot_users (
+                id SERIAL PRIMARY KEY,
+                telegram_user_id TEXT UNIQUE,
+                telegram_username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                language_code TEXT,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Таблица статистики обработанных сообщений
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS stats (
+                id SERIAL PRIMARY KEY,
+                date DATE DEFAULT CURRENT_DATE UNIQUE,
+                messages_processed INTEGER DEFAULT 0,
+                matches_found INTEGER DEFAULT 0,
+                notifications_sent INTEGER DEFAULT 0
+            )
+        `);
+
+        isInitialized = true;
+        console.log('📦 Database initialized');
+    } finally {
+        client.release();
     }
-
-    // Создаем таблицы
-    db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_user_id TEXT UNIQUE,
-            telegram_username TEXT,
-            phone TEXT,
-            api_id TEXT,
-            api_hash TEXT,
-            session_string TEXT,
-            bot_chat_id TEXT,
-            is_active INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS monitor_settings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            folder_name TEXT NOT NULL,
-            keywords TEXT NOT NULL,
-            is_active INTEGER DEFAULT 1,
-            monitoring_started_at DATETIME,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS monitored_chats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            chat_id TEXT NOT NULL,
-            chat_title TEXT,
-            chat_type TEXT,
-            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            UNIQUE(user_id, chat_id)
-        )
-    `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS sent_notifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            chat_id TEXT NOT NULL,
-            message_id TEXT NOT NULL,
-            sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            UNIQUE(user_id, chat_id, message_id)
-        )
-    `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS auth_sessions (
-            id TEXT PRIMARY KEY,
-            phone TEXT,
-            api_id TEXT,
-            api_hash TEXT,
-            phone_code_hash TEXT,
-            step TEXT DEFAULT 'phone',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            expires_at DATETIME
-        )
-    `);
-
-    saveDatabase();
-    isInitialized = true;
-    return db;
 }
 
-// Сохранение базы данных на диск
-function saveDatabase() {
-    if (db) {
-        try {
-            const data = db.export();
-            const buffer = Buffer.from(data);
-            fs.writeFileSync(dbPath, buffer);
-        } catch (e) {
-            console.error('Error saving database:', e);
-        }
-    }
+// Helper функции
+async function query(sql, params = []) {
+    const result = await pool.query(sql, params);
+    return result;
 }
 
-// Периодическое сохранение
-setInterval(saveDatabase, 30000);
-
-// Helper для выполнения запросов
-function run(sql, params = []) {
-    if (!db) throw new Error('Database not initialized');
-    db.run(sql, params);
-    saveDatabase();
+async function getOne(sql, params = []) {
+    const result = await pool.query(sql, params);
+    return result.rows[0] || null;
 }
 
-function get(sql, params = []) {
-    if (!db) throw new Error('Database not initialized');
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    if (stmt.step()) {
-        const row = stmt.getAsObject();
-        stmt.free();
-        return row;
-    }
-    stmt.free();
-    return null;
-}
-
-function all(sql, params = []) {
-    if (!db) throw new Error('Database not initialized');
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return results;
+async function getAll(sql, params = []) {
+    const result = await pool.query(sql, params);
+    return result.rows;
 }
 
 // Экспорт
 module.exports = {
     initDatabase,
-    saveDatabase,
+    pool,
+    
     users: {
-        create: (telegramUserId, username, phone, apiId, apiHash, sessionString, botChatId) => {
-            run(`
+        create: async (telegramUserId, username, phone, apiId, apiHash, sessionString, botChatId) => {
+            const result = await query(`
                 INSERT INTO users (telegram_user_id, telegram_username, phone, api_id, api_hash, session_string, bot_chat_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
             `, [telegramUserId, username, phone, apiId, apiHash, sessionString, botChatId]);
-            return { lastInsertRowid: get('SELECT last_insert_rowid() as id').id };
+            return { lastInsertRowid: result.rows[0].id, id: result.rows[0].id };
         },
-        getByTelegramId: (telegramUserId) => get('SELECT * FROM users WHERE telegram_user_id = ?', [telegramUserId]),
-        getByPhone: (phone) => get('SELECT * FROM users WHERE phone = ?', [phone]),
-        getById: (id) => get('SELECT * FROM users WHERE id = ?', [id]),
-        updateSession: (id, sessionString) => {
-            run('UPDATE users SET session_string = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sessionString, id]);
+        getByTelegramId: (telegramUserId) => getOne('SELECT * FROM users WHERE telegram_user_id = $1', [telegramUserId]),
+        getByPhone: (phone) => getOne('SELECT * FROM users WHERE phone = $1', [phone]),
+        getById: (id) => getOne('SELECT * FROM users WHERE id = $1', [id]),
+        updateSession: async (id, sessionString) => {
+            await query('UPDATE users SET session_string = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [sessionString, id]);
         },
-        updateBotChatId: (telegramUserId, botChatId) => {
-            run('UPDATE users SET bot_chat_id = ?, updated_at = CURRENT_TIMESTAMP WHERE telegram_user_id = ?', [botChatId, telegramUserId]);
+        updateBotChatId: async (telegramUserId, botChatId) => {
+            await query('UPDATE users SET bot_chat_id = $1, updated_at = CURRENT_TIMESTAMP WHERE telegram_user_id = $2', [botChatId, telegramUserId]);
         },
-        setActive: (id, isActive) => {
-            run('UPDATE users SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [isActive ? 1 : 0, id]);
+        setActive: async (id, isActive) => {
+            await query('UPDATE users SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [isActive, id]);
         },
-        getAllActive: () => all('SELECT * FROM users WHERE is_active = 1'),
-        delete: (id) => run('DELETE FROM users WHERE id = ?', [id])
+        getAllActive: () => getAll('SELECT * FROM users WHERE is_active = TRUE'),
+        delete: async (id) => await query('DELETE FROM users WHERE id = $1', [id]),
+        count: async () => {
+            const result = await getOne('SELECT COUNT(*) as count FROM users');
+            return parseInt(result?.count || 0);
+        },
+        countActive: async () => {
+            const result = await getOne('SELECT COUNT(*) as count FROM users WHERE is_active = TRUE');
+            return parseInt(result?.count || 0);
+        }
     },
+    
     monitors: {
-        create: (userId, folderName, keywords) => {
-            run(`
+        create: async (userId, folderName, keywords) => {
+            await query(`
                 INSERT INTO monitor_settings (user_id, folder_name, keywords, monitoring_started_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
             `, [userId, folderName, JSON.stringify(keywords)]);
         },
-        getByUserId: (userId) => {
-            const result = get('SELECT * FROM monitor_settings WHERE user_id = ? AND is_active = 1', [userId]);
+        getByUserId: async (userId) => {
+            const result = await getOne('SELECT * FROM monitor_settings WHERE user_id = $1 AND is_active = TRUE', [userId]);
             if (result) {
                 result.keywords = JSON.parse(result.keywords);
             }
             return result;
         },
-        update: (userId, folderName, keywords) => {
-            run('UPDATE monitor_settings SET folder_name = ?, keywords = ? WHERE user_id = ?', [folderName, JSON.stringify(keywords), userId]);
+        update: async (userId, folderName, keywords) => {
+            await query('UPDATE monitor_settings SET folder_name = $1, keywords = $2 WHERE user_id = $3', [folderName, JSON.stringify(keywords), userId]);
         },
-        setActive: (userId, isActive) => {
-            run('UPDATE monitor_settings SET is_active = ? WHERE user_id = ?', [isActive ? 1 : 0, userId]);
+        setActive: async (userId, isActive) => {
+            await query('UPDATE monitor_settings SET is_active = $1 WHERE user_id = $2', [isActive, userId]);
         },
-        delete: (userId) => run('DELETE FROM monitor_settings WHERE user_id = ?', [userId])
+        delete: async (userId) => await query('DELETE FROM monitor_settings WHERE user_id = $1', [userId])
     },
+    
     chats: {
-        add: (userId, chatId, chatTitle, chatType) => {
-            run(`
-                INSERT OR REPLACE INTO monitored_chats (user_id, chat_id, chat_title, chat_type)
-                VALUES (?, ?, ?, ?)
+        add: async (userId, chatId, chatTitle, chatType) => {
+            await query(`
+                INSERT INTO monitored_chats (user_id, chat_id, chat_title, chat_type)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, chat_id) DO UPDATE SET chat_title = $3, chat_type = $4
             `, [userId, chatId, chatTitle, chatType]);
         },
-        getByUserId: (userId) => all('SELECT * FROM monitored_chats WHERE user_id = ?', [userId]),
-        deleteByUserId: (userId) => run('DELETE FROM monitored_chats WHERE user_id = ?', [userId]),
-        count: (userId) => {
-            const result = get('SELECT COUNT(*) as count FROM monitored_chats WHERE user_id = ?', [userId]);
-            return result ? result.count : 0;
+        getByUserId: (userId) => getAll('SELECT * FROM monitored_chats WHERE user_id = $1', [userId]),
+        deleteByUserId: async (userId) => await query('DELETE FROM monitored_chats WHERE user_id = $1', [userId]),
+        count: async (userId) => {
+            const result = await getOne('SELECT COUNT(*) as count FROM monitored_chats WHERE user_id = $1', [userId]);
+            return parseInt(result?.count || 0);
         }
     },
+    
     notifications: {
-        add: (userId, chatId, messageId) => {
+        add: async (userId, chatId, messageId) => {
             try {
-                run('INSERT OR IGNORE INTO sent_notifications (user_id, chat_id, message_id) VALUES (?, ?, ?)', [userId, chatId, messageId]);
+                await query('INSERT INTO sent_notifications (user_id, chat_id, message_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [userId, chatId, messageId]);
             } catch (e) {}
         },
-        exists: (userId, chatId, messageId) => {
-            return !!get('SELECT 1 FROM sent_notifications WHERE user_id = ? AND chat_id = ? AND message_id = ?', [userId, chatId, messageId]);
+        exists: async (userId, chatId, messageId) => {
+            const result = await getOne('SELECT 1 FROM sent_notifications WHERE user_id = $1 AND chat_id = $2 AND message_id = $3', [userId, chatId, messageId]);
+            return !!result;
         },
-        cleanup: () => run("DELETE FROM sent_notifications WHERE sent_at < datetime('now', '-7 days')")
+        cleanup: async () => await query("DELETE FROM sent_notifications WHERE sent_at < NOW() - INTERVAL '7 days'")
     },
+    
     auth: {
-        create: (id, phone, apiId, apiHash) => {
-            run(`
+        create: async (id, phone, apiId, apiHash) => {
+            await query(`
                 INSERT INTO auth_sessions (id, phone, api_id, api_hash, step, expires_at)
-                VALUES (?, ?, ?, ?, 'phone', datetime('now', '+30 minutes'))
+                VALUES ($1, $2, $3, $4, 'phone', NOW() + INTERVAL '30 minutes')
             `, [id, phone, apiId, apiHash]);
         },
-        get: (id) => get("SELECT * FROM auth_sessions WHERE id = ? AND expires_at > datetime('now')", [id]),
-        updateStep: (id, step, phoneCodeHash = null) => {
-            run('UPDATE auth_sessions SET step = ?, phone_code_hash = ? WHERE id = ?', [step, phoneCodeHash, id]);
+        get: (id) => getOne("SELECT * FROM auth_sessions WHERE id = $1 AND expires_at > NOW()", [id]),
+        updateStep: async (id, step, phoneCodeHash = null) => {
+            await query('UPDATE auth_sessions SET step = $1, phone_code_hash = $2 WHERE id = $3', [step, phoneCodeHash, id]);
         },
-        delete: (id) => run('DELETE FROM auth_sessions WHERE id = ?', [id]),
-        cleanup: () => run("DELETE FROM auth_sessions WHERE expires_at < datetime('now')")
+        delete: async (id) => await query('DELETE FROM auth_sessions WHERE id = $1', [id]),
+        cleanup: async () => await query("DELETE FROM auth_sessions WHERE expires_at < NOW()")
+    },
+    
+    // Новые методы для статистики
+    botUsers: {
+        upsert: async (telegramUserId, username, firstName, lastName, languageCode) => {
+            await query(`
+                INSERT INTO bot_users (telegram_user_id, telegram_username, first_name, last_name, language_code)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (telegram_user_id) DO UPDATE SET
+                    telegram_username = $2,
+                    first_name = $3,
+                    last_name = $4,
+                    language_code = $5,
+                    last_seen = CURRENT_TIMESTAMP
+            `, [telegramUserId, username, firstName, lastName, languageCode]);
+        },
+        count: async () => {
+            const result = await getOne('SELECT COUNT(*) as count FROM bot_users');
+            return parseInt(result?.count || 0);
+        },
+        getAll: () => getAll('SELECT * FROM bot_users ORDER BY last_seen DESC')
+    },
+    
+    stats: {
+        increment: async (field) => {
+            await query(`
+                INSERT INTO stats (date, ${field})
+                VALUES (CURRENT_DATE, 1)
+                ON CONFLICT (date) DO UPDATE SET ${field} = stats.${field} + 1
+            `);
+        },
+        getToday: () => getOne('SELECT * FROM stats WHERE date = CURRENT_DATE'),
+        getTotal: async () => {
+            const result = await getOne(`
+                SELECT 
+                    COALESCE(SUM(messages_processed), 0) as messages_processed,
+                    COALESCE(SUM(matches_found), 0) as matches_found,
+                    COALESCE(SUM(notifications_sent), 0) as notifications_sent
+                FROM stats
+            `);
+            return result;
+        }
     }
 };

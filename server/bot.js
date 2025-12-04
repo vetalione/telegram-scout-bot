@@ -1,6 +1,9 @@
 const TelegramBot = require('node-telegram-bot-api');
 const database = require('./database');
 
+// ID администратора (твой Telegram ID)
+const ADMIN_ID = process.env.ADMIN_TELEGRAM_ID || '278263484';
+
 class NotificationBot {
     constructor(token) {
         this.bot = new TelegramBot(token, { polling: true });
@@ -21,19 +24,28 @@ class NotificationBot {
             
             console.log(`[Bot] /start from user ${userId} (${username}), chatId: ${chatId}`);
             
+            // Сохраняем всех кто нажал /start для статистики
+            await database.botUsers.upsert(
+                userId,
+                username,
+                msg.from.first_name,
+                msg.from.last_name,
+                msg.from.language_code
+            );
+            
             // Проверяем есть ли параметр (для deep linking)
             const param = match[1]?.trim();
             
             // Сохраняем chat_id для отправки уведомлений
-            const existingUser = database.users.getByTelegramId(userId);
+            const existingUser = await database.users.getByTelegramId(userId);
             console.log(`[Bot] Existing user found:`, existingUser ? `id=${existingUser.id}, bot_chat_id=${existingUser.bot_chat_id}` : 'null');
             
             if (existingUser) {
-                database.users.updateBotChatId(userId, chatId.toString());
+                await database.users.updateBotChatId(userId, chatId.toString());
                 console.log(`[Bot] Updated bot_chat_id to ${chatId} for user ${userId}`);
                 
                 // Проверяем что обновилось
-                const updatedUser = database.users.getByTelegramId(userId);
+                const updatedUser = await database.users.getByTelegramId(userId);
                 console.log(`[Bot] After update, bot_chat_id:`, updatedUser?.bot_chat_id);
             } else {
                 console.log(`[Bot] User not found in DB. They need to configure via web first.`);
@@ -76,12 +88,55 @@ class NotificationBot {
             await this.bot.sendMessage(chatId, welcomeMessage, replyOptions);
         });
 
+        // Обработка команды /admin (только для администратора)
+        this.bot.onText(/\/admin/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id.toString();
+
+            if (userId !== ADMIN_ID) {
+                await this.bot.sendMessage(chatId, '❌ У вас нет доступа к этой команде.');
+                return;
+            }
+
+            try {
+                const totalBotUsers = await database.botUsers.count();
+                const totalConfiguredUsers = await database.users.count();
+                const activeMonitorings = await database.users.countActive();
+                const stats = await database.stats.getTotal();
+                const todayStats = await database.stats.getToday();
+
+                const message = `
+📊 *Статистика Scout Bot*
+
+👥 *Пользователи:*
+├ Всего нажали /start: ${totalBotUsers}
+├ Настроили мониторинг: ${totalConfiguredUsers}
+└ Активных мониторингов: ${activeMonitorings}
+
+📈 *За всё время:*
+├ Сообщений обработано: ${stats?.messages_processed || 0}
+├ Совпадений найдено: ${stats?.matches_found || 0}
+└ Уведомлений отправлено: ${stats?.notifications_sent || 0}
+
+📅 *Сегодня:*
+├ Сообщений обработано: ${todayStats?.messages_processed || 0}
+├ Совпадений найдено: ${todayStats?.matches_found || 0}
+└ Уведомлений отправлено: ${todayStats?.notifications_sent || 0}
+                `;
+
+                await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error('[Bot] Admin command error:', error);
+                await this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+            }
+        });
+
         // Обработка команды /status
         this.bot.onText(/\/status/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id.toString();
 
-            const user = database.users.getByTelegramId(userId);
+            const user = await database.users.getByTelegramId(userId);
             
             if (!user) {
                 await this.bot.sendMessage(chatId, 
@@ -91,8 +146,8 @@ class NotificationBot {
                 return;
             }
 
-            const settings = database.monitors.getByUserId(user.id);
-            const chatsCount = database.chats.count(user.id);
+            const settings = await database.monitors.getByUserId(user.id);
+            const chatsCount = await database.chats.count(user.id);
 
             const statusEmoji = user.is_active ? '✅' : '⏸️';
             const statusText = user.is_active ? 'Активен' : 'Остановлен';
@@ -125,7 +180,7 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
             const chatId = msg.chat.id;
             const userId = msg.from.id.toString();
 
-            const user = database.users.getByTelegramId(userId);
+            const user = await database.users.getByTelegramId(userId);
             
             if (!user) {
                 await this.bot.sendMessage(chatId, 
@@ -191,7 +246,7 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
             const data = query.data;
 
             if (data === 'stop_monitoring') {
-                const user = database.users.getByTelegramId(userId);
+                const user = await database.users.getByTelegramId(userId);
                 if (user && this.monitor) {
                     await this.monitor.stopMonitoring(user.id);
                     await this.bot.answerCallbackQuery(query.id, {
@@ -202,7 +257,7 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
             }
 
             if (data === 'start_monitoring') {
-                const user = database.users.getByTelegramId(userId);
+                const user = await database.users.getByTelegramId(userId);
                 if (user && this.monitor) {
                     const result = await this.monitor.startMonitoring(user.id);
                     if (result.success) {

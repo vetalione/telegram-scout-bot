@@ -79,8 +79,8 @@ app.post('/api/auth/send-code', async (req, res) => {
         });
 
         // Сохраняем в БД
-        database.auth.create(sessionId, phone, apiId, apiHash);
-        database.auth.updateStep(sessionId, 'code', result.phoneCodeHash);
+        await database.auth.create(sessionId, phone, apiId, apiHash);
+        await database.auth.updateStep(sessionId, 'code', result.phoneCodeHash);
 
         res.json({ 
             success: true, 
@@ -128,7 +128,7 @@ app.post('/api/auth/verify-code', async (req, res) => {
         if (!result.success) {
             if (result.needPassword) {
                 // Обновляем шаг в сессии
-                database.auth.updateStep(sessionId, '2fa', authData.phoneCodeHash);
+                await database.auth.updateStep(sessionId, '2fa', authData.phoneCodeHash);
                 return res.json({ 
                     success: false, 
                     needPassword: true,
@@ -337,14 +337,14 @@ app.post('/api/monitoring/start', async (req, res) => {
         }
 
         // Проверяем, есть ли уже пользователь в системе
-        let user = database.users.getByTelegramId(authData.user.id);
+        let user = await database.users.getByTelegramId(authData.user.id);
         
         if (user) {
             // Обновляем сессию
-            database.users.updateSession(user.id, authData.sessionString);
+            await database.users.updateSession(user.id, authData.sessionString);
         } else {
             // Создаем нового пользователя
-            database.users.create(
+            await database.users.create(
                 authData.user.id,
                 authData.user.username,
                 authData.phone,
@@ -354,7 +354,7 @@ app.post('/api/monitoring/start', async (req, res) => {
                 null // bot_chat_id будет установлен когда пользователь напишет боту
             );
             // Получаем созданного пользователя по telegram_user_id
-            user = database.users.getByTelegramId(authData.user.id);
+            user = await database.users.getByTelegramId(authData.user.id);
         }
         
         if (!user) {
@@ -365,18 +365,18 @@ app.post('/api/monitoring/start', async (req, res) => {
         }
 
         // Удаляем старые настройки мониторинга
-        database.monitors.delete(user.id);
-        database.chats.deleteByUserId(user.id);
+        await database.monitors.delete(user.id);
+        await database.chats.deleteByUserId(user.id);
 
         // Создаем новые настройки
-        database.monitors.create(user.id, folderName, keywordsList);
+        await database.monitors.create(user.id, folderName, keywordsList);
 
         // Запускаем мониторинг
         const monitorResult = await monitor.startMonitoring(user.id);
 
         // Очищаем временные данные авторизации
         authClients.delete(sessionId);
-        database.auth.delete(sessionId);
+        await database.auth.delete(sessionId);
 
         if (!monitorResult.success) {
             return res.json({ 
@@ -414,7 +414,7 @@ app.post('/api/monitoring/stop', async (req, res) => {
             });
         }
 
-        const user = database.users.getByTelegramId(userId);
+        const user = await database.users.getByTelegramId(userId);
         if (!user) {
             return res.status(404).json({ 
                 success: false, 
@@ -442,7 +442,7 @@ app.get('/api/monitoring/status/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
 
-        const user = database.users.getByTelegramId(userId);
+        const user = await database.users.getByTelegramId(userId);
         if (!user) {
             return res.json({ 
                 success: true, 
@@ -450,8 +450,8 @@ app.get('/api/monitoring/status/:userId', async (req, res) => {
             });
         }
 
-        const settings = database.monitors.getByUserId(user.id);
-        const chatsCount = database.chats.count(user.id);
+        const settings = await database.monitors.getByUserId(user.id);
+        const chatsCount = await database.chats.count(user.id);
 
         res.json({ 
             success: true,
@@ -482,22 +482,26 @@ app.get('/health', (req, res) => {
 });
 
 // Периодическая очистка
-setInterval(() => {
-    // Очищаем старые auth сессии
-    database.auth.cleanup();
-    
-    // Очищаем старые уведомления
-    database.notifications.cleanup();
-    
-    // Очищаем просроченные клиенты авторизации (старше 30 минут)
-    const now = Date.now();
-    for (const [sessionId, data] of authClients) {
-        if (now - data.createdAt > 30 * 60 * 1000) {
-            if (data.client) {
-                data.client.disconnect().catch(() => {});
+setInterval(async () => {
+    try {
+        // Очищаем старые auth сессии
+        await database.auth.cleanup();
+        
+        // Очищаем старые уведомления
+        await database.notifications.cleanup();
+        
+        // Очищаем просроченные клиенты авторизации (старше 30 минут)
+        const now = Date.now();
+        for (const [sessionId, data] of authClients) {
+            if (now - data.createdAt > 30 * 60 * 1000) {
+                if (data.client) {
+                    data.client.disconnect().catch(() => {});
+                }
+                authClients.delete(sessionId);
             }
-            authClients.delete(sessionId);
         }
+    } catch (e) {
+        console.error('Cleanup error:', e);
     }
 }, 5 * 60 * 1000); // каждые 5 минут
 
