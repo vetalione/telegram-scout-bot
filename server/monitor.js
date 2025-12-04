@@ -443,7 +443,7 @@ class TelegramMonitor {
     /**
      * Обработчик новых сообщений
      */
-    async handleNewMessage(event, userId, user, settings) {
+    async handleNewMessage(event, userId, userSnapshot, settings) {
         try {
             const message = event.message;
             
@@ -453,6 +453,14 @@ class TelegramMonitor {
             // Пропускаем сервисные сообщения
             if (!message.message || message.message.length === 0) {
                 console.log(`[Monitor] Skipping: empty message`);
+                return;
+            }
+            
+            // ВАЖНО: Загружаем свежие данные пользователя из БД
+            // чтобы получить актуальный bot_chat_id (мог обновиться после /start)
+            const user = database.users.getById(userId);
+            if (!user) {
+                console.log(`[Monitor] User ${userId} not found in DB`);
                 return;
             }
 
@@ -509,7 +517,8 @@ class TelegramMonitor {
                 chatTitle: chat.title || 'Неизвестный чат',
                 chatId: chatId,
                 messageId: messageId,
-                matchedKeywords: matchResult.matchedKeywords
+                matchedKeywords: matchResult.matchedKeywords,
+                matchDetails: matchResult.matchDetails || []
             });
 
             // Отправляем уведомление через бота

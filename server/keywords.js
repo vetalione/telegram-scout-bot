@@ -1,5 +1,6 @@
 /**
- * Модуль для анализа сообщений на соответствие ключевым словам
+ * Улучшенный модуль для анализа сообщений на соответствие ключевым словам
+ * Включает: fuzzy matching, стемминг, синонимы, N-граммы
  */
 
 class KeywordMatcher {
@@ -9,8 +10,55 @@ class KeywordMatcher {
             'и', 'в', 'на', 'с', 'по', 'для', 'от', 'за', 'к', 'из',
             'а', 'но', 'или', 'что', 'как', 'это', 'так', 'же',
             'не', 'да', 'нет', 'бы', 'ли', 'то', 'вот', 'ещё',
-            'уже', 'тоже', 'только', 'очень', 'может', 'быть'
+            'уже', 'тоже', 'только', 'очень', 'может', 'быть',
+            'привет', 'здравствуйте', 'спасибо', 'пожалуйста'
         ]);
+
+        // Словарь синонимов (все формы приводим к базовому слову)
+        this.synonyms = {
+            // Разработчики
+            'программист': ['разработчик', 'девелопер', 'developer', 'кодер', 'программер', 'прогер', 'вайбкодер'],
+            'разработчик': ['программист', 'девелопер', 'developer', 'кодер', 'программер', 'прогер', 'вайбкодер'],
+            'фронтенд': ['frontend', 'фронт', 'верстальщик', 'react', 'vue', 'angular'],
+            'бэкенд': ['backend', 'бэк', 'серверный'],
+            'фулстек': ['fullstack', 'full-stack', 'фуллстек'],
+            
+            // Дизайнеры
+            'дизайнер': ['designer', 'дизайн', 'ui', 'ux', 'уидизайнер', 'юидизайнер'],
+            'графический': ['graphic', 'графика'],
+            
+            // Действия поиска
+            'ищу': ['нужен', 'нужна', 'нужно', 'требуется', 'looking'],
+            'посоветуйте': ['порекомендуйте', 'подскажите', 'recommend', 'посоветовать'],
+            
+            // Маркетинг
+            'маркетолог': ['marketer', 'маркетинг', 'smm', 'смм', 'таргетолог'],
+            
+            // Менеджмент
+            'менеджер': ['manager', 'pm', 'пм', 'проджект'],
+        };
+
+        // Окончания для стемминга (русский язык)
+        this.suffixes = [
+            'ами', 'ями', 'ому', 'ему', 'ого', 'его', 'ить', 'ать', 'еть',
+            'ов', 'ев', 'ей', 'ий', 'ый', 'ой', 'ая', 'яя', 'ое', 'ее',
+            'ам', 'ям', 'ах', 'ях', 'ом', 'ем', 'им', 'ым',
+            'а', 'я', 'о', 'е', 'и', 'ы', 'у', 'ю'
+        ].sort((a, b) => b.length - a.length); // Сначала длинные
+    }
+
+    /**
+     * Простой стемминг - отрезаем окончания
+     */
+    stem(word) {
+        if (word.length < 4) return word;
+        
+        for (const suffix of this.suffixes) {
+            if (word.endsWith(suffix) && word.length - suffix.length >= 2) {
+                return word.slice(0, -suffix.length);
+            }
+        }
+        return word;
     }
 
     /**
@@ -26,79 +74,252 @@ class KeywordMatcher {
     }
 
     /**
-     * Проверяет содержит ли текст ключевые слова
-     * @param {string} text - текст сообщения
-     * @param {Array} keywords - массив ключевых слов/фраз
-     * @returns {Object} - результат проверки с деталями
+     * Расстояние Левенштейна для fuzzy matching
+     */
+    levenshteinDistance(str1, str2) {
+        const m = str1.length;
+        const n = str2.length;
+        const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                if (str1[i - 1] === str2[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1];
+                } else {
+                    dp[i][j] = 1 + Math.min(
+                        dp[i - 1][j],     // удаление
+                        dp[i][j - 1],     // вставка
+                        dp[i - 1][j - 1]  // замена
+                    );
+                }
+            }
+        }
+        return dp[m][n];
+    }
+
+    /**
+     * Fuzzy matching - проверяет похожесть слов
+     * Возвращает true если слова похожи (с учетом опечаток)
+     */
+    fuzzyMatch(word1, word2, threshold = 0.75) {
+        const w1 = this.normalizeText(word1);
+        const w2 = this.normalizeText(word2);
+        
+        // Точное совпадение
+        if (w1 === w2) return true;
+        
+        // Одно слово содержит другое
+        if (w1.includes(w2) || w2.includes(w1)) return true;
+        
+        // Проверяем стеммы
+        const stem1 = this.stem(w1);
+        const stem2 = this.stem(w2);
+        if (stem1 === stem2) return true;
+        if (stem1.includes(stem2) || stem2.includes(stem1)) return true;
+        
+        // Расстояние Левенштейна
+        const maxLen = Math.max(w1.length, w2.length);
+        if (maxLen < 3) return w1 === w2;
+        
+        const distance = this.levenshteinDistance(w1, w2);
+        const similarity = 1 - (distance / maxLen);
+        
+        return similarity >= threshold;
+    }
+
+    /**
+     * Получить все синонимы для слова
+     */
+    getSynonyms(word) {
+        const normalized = this.normalizeText(word);
+        const stemmed = this.stem(normalized);
+        const synonyms = new Set([normalized, stemmed]);
+        
+        // Ищем в словаре синонимов
+        for (const [key, values] of Object.entries(this.synonyms)) {
+            const keyNorm = this.normalizeText(key);
+            const keyStem = this.stem(keyNorm);
+            
+            // Если слово совпадает с ключом или его стеммом
+            if (this.fuzzyMatch(normalized, keyNorm) || this.fuzzyMatch(stemmed, keyStem)) {
+                synonyms.add(keyNorm);
+                synonyms.add(keyStem);
+                for (const syn of values) {
+                    synonyms.add(this.normalizeText(syn));
+                    synonyms.add(this.stem(this.normalizeText(syn)));
+                }
+            }
+            
+            // Если слово есть в значениях
+            for (const val of values) {
+                const valNorm = this.normalizeText(val);
+                const valStem = this.stem(valNorm);
+                if (this.fuzzyMatch(normalized, valNorm) || this.fuzzyMatch(stemmed, valStem)) {
+                    synonyms.add(keyNorm);
+                    synonyms.add(keyStem);
+                    for (const syn of values) {
+                        synonyms.add(this.normalizeText(syn));
+                        synonyms.add(this.stem(this.normalizeText(syn)));
+                    }
+                }
+            }
+        }
+        
+        return [...synonyms];
+    }
+
+    /**
+     * Генерация N-грамм для текста
+     */
+    getNgrams(text, n = 2) {
+        const normalized = this.normalizeText(text);
+        const words = normalized.split(' ').filter(w => w.length > 1);
+        const ngrams = [];
+        
+        for (let i = 0; i <= words.length - n; i++) {
+            ngrams.push(words.slice(i, i + n).join(' '));
+        }
+        
+        return ngrams;
+    }
+
+    /**
+     * Основной метод проверки - улучшенный
      */
     match(text, keywords) {
         if (!text || !keywords || keywords.length === 0) {
-            return { matched: false, matchedKeywords: [] };
+            return { matched: false, matchedKeywords: [], matchDetails: [] };
         }
 
         const normalizedText = this.normalizeText(text);
+        const textWords = normalizedText.split(' ').filter(w => w.length > 1 && !this.stopWords.has(w));
+        const textStems = textWords.map(w => this.stem(w));
         const matchedKeywords = [];
+        const matchDetails = [];
 
         for (const keyword of keywords) {
-            const normalizedKeyword = this.normalizeText(keyword);
-            
-            // Проверяем прямое вхождение фразы
-            if (normalizedText.includes(normalizedKeyword)) {
-                matchedKeywords.push(keyword);
-                continue;
+            const keywordParts = this.normalizeText(keyword).split(' ').filter(w => w.length > 1);
+            let matched = false;
+            let matchType = '';
+
+            // 1. Прямое вхождение фразы
+            if (normalizedText.includes(this.normalizeText(keyword))) {
+                matched = true;
+                matchType = 'exact';
             }
 
-            // Проверяем отдельные слова из фразы (если фраза из нескольких слов)
-            const keywordParts = normalizedKeyword.split(' ').filter(w => w.length > 2);
-            if (keywordParts.length > 1) {
-                const matchedParts = keywordParts.filter(part => 
-                    normalizedText.includes(part)
-                );
-                // Если совпало более 60% слов из фразы
-                if (matchedParts.length >= Math.ceil(keywordParts.length * 0.6)) {
-                    matchedKeywords.push(keyword);
+            // 2. Проверка по стеммам
+            if (!matched) {
+                for (const part of keywordParts) {
+                    const partStem = this.stem(part);
+                    if (textStems.some(ts => ts === partStem || ts.includes(partStem) || partStem.includes(ts))) {
+                        matched = true;
+                        matchType = 'stem';
+                        break;
+                    }
                 }
+            }
+
+            // 3. Проверка по синонимам
+            if (!matched) {
+                for (const part of keywordParts) {
+                    const synonyms = this.getSynonyms(part);
+                    for (const syn of synonyms) {
+                        const synStem = this.stem(syn);
+                        if (textStems.some(ts => ts === synStem || ts.includes(synStem) || synStem.includes(ts))) {
+                            matched = true;
+                            matchType = 'synonym';
+                            break;
+                        }
+                        // Также проверяем в исходных словах
+                        if (textWords.some(tw => this.fuzzyMatch(tw, syn))) {
+                            matched = true;
+                            matchType = 'synonym';
+                            break;
+                        }
+                    }
+                    if (matched) break;
+                }
+            }
+
+            // 4. Fuzzy matching для каждого слова ключевой фразы
+            if (!matched) {
+                for (const part of keywordParts) {
+                    if (part.length < 3) continue;
+                    for (const textWord of textWords) {
+                        if (this.fuzzyMatch(textWord, part, 0.7)) {
+                            matched = true;
+                            matchType = 'fuzzy';
+                            break;
+                        }
+                    }
+                    if (matched) break;
+                }
+            }
+
+            // 5. N-граммы для многословных ключей
+            if (!matched && keywordParts.length > 1) {
+                const textNgrams = this.getNgrams(normalizedText, keywordParts.length);
+                const keywordNgram = keywordParts.join(' ');
+                
+                for (const ngram of textNgrams) {
+                    if (this.fuzzyMatch(ngram, keywordNgram, 0.6)) {
+                        matched = true;
+                        matchType = 'ngram';
+                        break;
+                    }
+                }
+            }
+
+            if (matched) {
+                matchedKeywords.push(keyword);
+                matchDetails.push({ keyword, matchType });
             }
         }
 
         return {
             matched: matchedKeywords.length > 0,
-            matchedKeywords: [...new Set(matchedKeywords)]
+            matchedKeywords: [...new Set(matchedKeywords)],
+            matchDetails
         };
     }
 
     /**
      * Проверяет сообщение на соответствие паттернам поиска
-     * Например: "ищу дизайнера" -> проверяет паттерн "ищу + профессия"
      */
     matchPatterns(text, patterns) {
         const normalizedText = this.normalizeText(text);
         const matchedPatterns = [];
 
-        // Паттерны для поиска специалистов
+        // Паттерны для поиска специалистов (с fuzzy)
         const searchPatterns = [
-            /ищу\s+(\w+)/gi,
-            /нужен\s+(\w+)/gi,
-            /нужна\s+(\w+)/gi,
-            /требуется\s+(\w+)/gi,
-            /посоветуйте\s+(\w+)/gi,
-            /порекомендуйте\s+(\w+)/gi,
-            /подскажите\s+(\w+)/gi,
-            /кто\s+знает\s+(\w+)/gi,
-            /есть\s+кто[- ]?нибудь\s+(\w+)/gi
+            /ищу\s+(\S+)/gi,
+            /нужен\s+(\S+)/gi,
+            /нужна\s+(\S+)/gi,
+            /нужно\s+(\S+)/gi,
+            /требуется\s+(\S+)/gi,
+            /посоветуйте\s+(\S+)/gi,
+            /порекомендуйте\s+(\S+)/gi,
+            /подскажите\s+(\S+)/gi,
+            /кто\s+знает\s+(\S+)/gi,
+            /есть\s+(\S+)\s*\?/gi
         ];
 
         for (const pattern of searchPatterns) {
             const matches = normalizedText.matchAll(pattern);
             for (const match of matches) {
                 if (match[1] && match[1].length > 2) {
-                    // Проверяем, есть ли найденное слово в списке искомых паттернов
                     for (const targetPattern of patterns) {
                         const normalizedTarget = this.normalizeText(targetPattern);
-                        if (match[1].includes(normalizedTarget) || normalizedTarget.includes(match[1])) {
+                        // Используем fuzzy matching
+                        if (this.fuzzyMatch(match[1], normalizedTarget, 0.6)) {
                             matchedPatterns.push({
                                 pattern: match[0],
-                                target: targetPattern
+                                target: targetPattern,
+                                found: match[1]
                             });
                         }
                     }
@@ -124,6 +345,7 @@ class KeywordMatcher {
         return {
             matched: keywordResult.matched || patternResult.matched,
             matchedKeywords: keywordResult.matchedKeywords,
+            matchDetails: keywordResult.matchDetails,
             matchedPatterns: patternResult.matchedPatterns,
             originalText: text
         };
@@ -155,12 +377,11 @@ function formatNotification(data) {
         chatTitle,
         chatId,
         messageId,
-        matchedKeywords = []
+        matchedKeywords = [],
+        matchDetails = []
     } = data;
 
     // Создаем ссылку на сообщение
-    // Для публичных групп: https://t.me/username/messageId
-    // Для приватных групп: https://t.me/c/chatId/messageId
     let messageLink;
     if (chatId.toString().startsWith('-100')) {
         const cleanChatId = chatId.toString().replace('-100', '');
@@ -170,9 +391,17 @@ function formatNotification(data) {
     }
 
     const usernameDisplay = username ? `@${username}` : 'нет';
-    const keywordsDisplay = matchedKeywords.length > 0 
-        ? `\n🔑 Ключевые слова: ${matchedKeywords.join(', ')}`
-        : '';
+    
+    // Показываем детали совпадения с типом матча
+    let keywordsDisplay = '';
+    if (matchedKeywords.length > 0) {
+        if (matchDetails && matchDetails.length > 0) {
+            const detailsStr = matchDetails.map(d => `"${d.keyword}" (${d.matchType})`).join(', ');
+            keywordsDisplay = `\n🔑 *Совпадения:* ${detailsStr}`;
+        } else {
+            keywordsDisplay = `\n🔑 *Ключевые слова:* ${matchedKeywords.join(', ')}`;
+        }
+    }
 
     return `🎯 *Найдено совпадение!*
 ${keywordsDisplay}

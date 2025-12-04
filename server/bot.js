@@ -19,13 +19,24 @@ class NotificationBot {
             const userId = msg.from.id.toString();
             const username = msg.from.username;
             
+            console.log(`[Bot] /start from user ${userId} (${username}), chatId: ${chatId}`);
+            
             // Проверяем есть ли параметр (для deep linking)
             const param = match[1]?.trim();
             
             // Сохраняем chat_id для отправки уведомлений
             const existingUser = database.users.getByTelegramId(userId);
+            console.log(`[Bot] Existing user found:`, existingUser ? `id=${existingUser.id}, bot_chat_id=${existingUser.bot_chat_id}` : 'null');
+            
             if (existingUser) {
                 database.users.updateBotChatId(userId, chatId.toString());
+                console.log(`[Bot] Updated bot_chat_id to ${chatId} for user ${userId}`);
+                
+                // Проверяем что обновилось
+                const updatedUser = database.users.getByTelegramId(userId);
+                console.log(`[Bot] After update, bot_chat_id:`, updatedUser?.bot_chat_id);
+            } else {
+                console.log(`[Bot] User not found in DB. They need to configure via web first.`);
             }
 
             const welcomeMessage = `
