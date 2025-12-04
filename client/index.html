@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scout Bot - Настройка мониторинга</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 500px;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .step-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ddd;
+            transition: all 0.3s;
+        }
+
+        .step-dot.active {
+            background: #667eea;
+            transform: scale(1.2);
+        }
+
+        .step-dot.completed {
+            background: #4CAF50;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        label small {
+            font-weight: normal;
+            color: #666;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .alert-error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+        }
+
+        .alert-warning {
+            background: #fff3e0;
+            color: #ef6c00;
+            border: 1px solid #ffcc80;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .folder-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .folder-item {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: background 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .folder-item:last-child {
+            border-bottom: none;
+        }
+
+        .folder-item:hover {
+            background: #f5f5f5;
+        }
+
+        .folder-item.selected {
+            background: #e3f2fd;
+            border-color: #667eea;
+        }
+
+        .folder-item input[type="radio"] {
+            width: auto;
+        }
+
+        .folder-icon {
+            font-size: 20px;
+        }
+
+        .folder-info {
+            flex: 1;
+        }
+
+        .folder-name {
+            font-weight: 600;
+        }
+
+        .folder-count {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .success-animation {
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .success-icon {
+            font-size: 80px;
+            color: #4CAF50;
+            animation: bounceIn 0.6s;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .help-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .help-link:hover {
+            text-decoration: underline;
+        }
+
+        .keywords-hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .chat-preview {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .chat-preview h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .chat-preview-list {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .chat-preview-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chat-preview-item:last-child {
+            border-bottom: none;
+        }
+
+        .chat-type {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #667eea;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Scout Bot</h1>
+            <p>Настройка мониторинга чатов</p>
+        </div>
+        
+        <div class="content">
+            <div class="step-indicator">
+                <div class="step-dot active" data-step="1"></div>
+                <div class="step-dot" data-step="2"></div>
+                <div class="step-dot" data-step="3"></div>
+                <div class="step-dot" data-step="4"></div>
+                <div class="step-dot" data-step="5"></div>
+            </div>
+
+            <!-- Step 1: API Credentials -->
+            <div class="step active" id="step1">
+                <h2 style="margin-bottom: 20px; color: #333;">Шаг 1: API данные</h2>
+                
+                <div class="alert alert-info">
+                    ℹ️ Получите API ID и Hash на <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>
+                </div>
+
+                <div class="form-group">
+                    <label>API ID</label>
+                    <input type="text" id="apiId" placeholder="12345678" required>
+                </div>
+
+                <div class="form-group">
+                    <label>API Hash</label>
+                    <input type="text" id="apiHash" placeholder="abcdef1234567890..." required>
+                </div>
+
+                <div class="form-group">
+                    <label>Номер телефона <small>(с кодом страны)</small></label>
+                    <input type="tel" id="phone" placeholder="+79001234567" required>
+                </div>
+
+                <button class="btn btn-primary" onclick="sendCode()">Получить код</button>
+                
+                <a href="https://my.telegram.org/auth" target="_blank" class="help-link">
+                    Как получить API ID и Hash?
+                </a>
+            </div>
+
+            <!-- Step 2: Phone Code -->
+            <div class="step" id="step2">
+                <h2 style="margin-bottom: 20px; color: #333;">Шаг 2: Подтверждение</h2>
+                
+                <div class="alert alert-info">
+                    📱 Код отправлен в Telegram на номер <span id="phoneMask"></span>
+                </div>
+
+                <div class="form-group">
+                    <label>Код подтверждения</label>
+                    <input type="text" id="code" placeholder="12345" maxlength="5" required>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="goToStep(1)">Назад</button>
+                    <button class="btn btn-primary" onclick="verifyCode()">Подтвердить</button>
+                </div>
+            </div>
+
+            <!-- Step 2.5: 2FA Password -->
+            <div class="step" id="step2fa">
+                <h2 style="margin-bottom: 20px; color: #333;">Двухфакторная аутентификация</h2>
+                
+                <div class="alert alert-warning">
+                    🔐 Ваш аккаунт защищен паролем. Введите пароль 2FA.
+                </div>
+
+                <div class="form-group">
+                    <label>Пароль</label>
+                    <input type="password" id="password2fa" placeholder="Ваш пароль 2FA" required>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="goToStep(1)">Начать заново</button>
+                    <button class="btn btn-primary" onclick="verify2FA()">Подтвердить</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Select Folder -->
+            <div class="step" id="step3">
+                <h2 style="margin-bottom: 20px; color: #333;">Шаг 3: Выберите папку</h2>
+                
+                <div class="alert alert-info">
+                    📁 Выберите папку с чатами для мониторинга (макс. 50 чатов)
+                </div>
+
+                <div class="loading" id="foldersLoading">
+                    <div class="spinner"></div>
+                    <p>Загрузка папок...</p>
+                </div>
+
+                <div class="folder-list" id="folderList"></div>
+
+                <div class="chat-preview" id="chatPreview" style="display: none;">
+                    <h4>📋 Чаты в папке (<span id="chatsCount">0</span>):</h4>
+                    <div class="chat-preview-list" id="chatPreviewList"></div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="goToStep(1)">Назад</button>
+                    <button class="btn btn-primary" onclick="goToStep(4)" id="btnSelectFolder" disabled>Далее</button>
+                </div>
+            </div>
+
+            <!-- Step 4: Keywords -->
+            <div class="step" id="step4">
+                <h2 style="margin-bottom: 20px; color: #333;">Шаг 4: Ключевые слова</h2>
+                
+                <div class="alert alert-info">
+                    🔑 Укажите ключевые слова или фразы для поиска
+                </div>
+
+                <div class="form-group">
+                    <label>Ключевые слова</label>
+                    <textarea id="keywords" placeholder="ищу дизайнера&#10;нужен модератор&#10;посоветуйте продюссера"></textarea>
+                    <p class="keywords-hint">Каждое слово/фраза на новой строке или через запятую</p>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="goToStep(3)">Назад</button>
+                    <button class="btn btn-primary" onclick="startMonitoring()">Запустить мониторинг</button>
+                </div>
+            </div>
+
+            <!-- Step 5: Success -->
+            <div class="step" id="step5">
+                <div class="success-animation">
+                    <div class="success-icon">✅</div>
+                    <h2 style="margin: 20px 0; color: #333;">Готово!</h2>
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Мониторинг успешно настроен. Теперь запустите бота, чтобы получать уведомления.
+                    </p>
+                </div>
+
+                <div class="alert alert-success">
+                    📊 Отслеживается чатов: <strong id="finalChatsCount">0</strong><br>
+                    🔑 Ключевых слов: <strong id="finalKeywordsCount">0</strong>
+                </div>
+
+                <a href="https://t.me/listnen_and_ping_bot" target="_blank" class="btn btn-primary" style="display: block; text-align: center; text-decoration: none;">
+                    🤖 Открыть бота
+                </a>
+
+                <button class="btn btn-secondary" onclick="location.reload()" style="margin-top: 10px;">
+                    Настроить заново
+                </button>
+            </div>
+
+            <!-- Loading overlay -->
+            <div class="loading" id="globalLoading">
+                <div class="spinner"></div>
+                <p id="loadingText">Подождите...</p>
+            </div>
+
+            <!-- Error display -->
+            <div class="alert alert-error" id="errorAlert" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let authSessionId = null;
+        let selectedFolder = null;
+        let userInfo = null;
+        let currentStep = 1;
+
+        // API Base URL
+        const API_URL = '';
+
+        // Utility functions
+        function showLoading(text = 'Подождите...') {
+            document.getElementById('globalLoading').classList.add('active');
+            document.getElementById('loadingText').textContent = text;
+        }
+
+        function hideLoading() {
+            document.getElementById('globalLoading').classList.remove('active');
+        }
+
+        function showError(message) {
+            const alert = document.getElementById('errorAlert');
+            alert.textContent = message;
+            alert.style.display = 'block';
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        function goToStep(step) {
+            currentStep = step;
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            
+            let stepId = `step${step}`;
+            document.getElementById(stepId).classList.add('active');
+
+            document.querySelectorAll('.step-dot').forEach((dot, index) => {
+                dot.classList.remove('active', 'completed');
+                if (index + 1 < step) {
+                    dot.classList.add('completed');
+                } else if (index + 1 === step) {
+                    dot.classList.add('active');
+                }
+            });
+        }
+
+        // Step 1: Send code
+        async function sendCode() {
+            const apiId = document.getElementById('apiId').value.trim();
+            const apiHash = document.getElementById('apiHash').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+
+            if (!apiId || !apiHash || !phone) {
+                showError('Заполните все поля');
+                return;
+            }
+
+            showLoading('Отправка кода...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/auth/send-code`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiId, apiHash, phone })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    authSessionId = data.sessionId;
+                    document.getElementById('phoneMask').textContent = phone.replace(/(\d{3})\d+(\d{2})/, '$1***$2');
+                    goToStep(2);
+                } else {
+                    showError(data.error || 'Ошибка отправки кода');
+                }
+            } catch (error) {
+                showError('Ошибка соединения: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Step 2: Verify code
+        async function verifyCode() {
+            const code = document.getElementById('code').value.trim();
+
+            if (!code) {
+                showError('Введите код');
+                return;
+            }
+
+            showLoading('Проверка кода...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/auth/verify-code`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: authSessionId, code })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    userInfo = data.user;
+                    await loadFolders();
+                    goToStep(3);
+                } else if (data.needPassword) {
+                    // Нужен 2FA пароль
+                    document.getElementById('step2fa').classList.add('active');
+                    document.getElementById('step2').classList.remove('active');
+                } else {
+                    showError(data.error || 'Неверный код');
+                }
+            } catch (error) {
+                showError('Ошибка соединения: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Step 2.5: Verify 2FA
+        async function verify2FA() {
+            const password = document.getElementById('password2fa').value;
+
+            if (!password) {
+                showError('Введите пароль');
+                return;
+            }
+
+            showLoading('Проверка пароля...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/auth/verify-2fa`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: authSessionId, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    userInfo = data.user;
+                    await loadFolders();
+                    goToStep(3);
+                } else {
+                    showError(data.error || 'Неверный пароль');
+                }
+            } catch (error) {
+                showError('Ошибка соединения: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Load folders
+        async function loadFolders() {
+            document.getElementById('foldersLoading').classList.add('active');
+            document.getElementById('folderList').innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_URL}/api/folders?sessionId=${authSessionId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderFolders(data.folders);
+                } else {
+                    showError(data.error || 'Ошибка загрузки папок');
+                }
+            } catch (error) {
+                showError('Ошибка соединения: ' + error.message);
+            } finally {
+                document.getElementById('foldersLoading').classList.remove('active');
+            }
+        }
+
+        function renderFolders(folders) {
+            const container = document.getElementById('folderList');
+            
+            if (folders.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">У вас нет папок в Telegram</div>';
+                return;
+            }
+
+            container.innerHTML = folders.map(folder => `
+                <div class="folder-item" onclick="selectFolder('${folder.title}', ${folder.id})">
+                    <input type="radio" name="folder" value="${folder.title}">
+                    <span class="folder-icon">📁</span>
+                    <div class="folder-info">
+                        <div class="folder-name">${folder.title}</div>
+                        <div class="folder-count">${folder.includePeers} чатов</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function selectFolder(folderName, folderId) {
+            // Визуальное выделение
+            document.querySelectorAll('.folder-item').forEach(item => {
+                item.classList.remove('selected');
+                item.querySelector('input').checked = false;
+            });
+            event.currentTarget.classList.add('selected');
+            event.currentTarget.querySelector('input').checked = true;
+
+            selectedFolder = folderName;
+            document.getElementById('btnSelectFolder').disabled = false;
+
+            // Загружаем превью чатов
+            showLoading('Загрузка чатов...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/folders/${encodeURIComponent(folderName)}/chats?sessionId=${authSessionId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderChatPreview(data.chats);
+                } else {
+                    showError(data.error || 'Ошибка загрузки чатов');
+                }
+            } catch (error) {
+                showError('Ошибка соединения: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function renderChatPreview(chats) {
+            const container = document.getElementById('chatPreview');
+            const list = document.getElementById('chatPreviewList');
+            
+            document.getElementById('chatsCount').textContent = chats.length;
+            
+            list.innerHTML = chats.map(chat => `
+                <div class="chat-preview-item">
+                    <span class="chat-type">${chat.type === 'supergroup' ? 'Супергруппа' : 'Группа'}</span>
+                    <span>${chat.title}</span>
+                </div>
+            `).join('');
+
+            container.style.display = 'block';
+        }
+
+        // Step 4: Start monitoring
+        async function startMonitoring() {
+            const keywords = document.getElementById('keywords').value.trim();
+
+            if (!keywords) {
+                showError('Введите хотя бы одно ключевое слово');
+                return;
+            }
+
+            if (!selectedFolder) {
+                showError('Выберите папку');
+                return;
+            }
+
+            showLoading('Настройка мониторинга...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/monitoring/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: authSessionId,
+                        folderName: selectedFolder,
+                        keywords: keywords
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('finalChatsCount').textContent = data.chatsCount;
+                    document.getElementById('finalKeywordsCount').textContent = keywords.split(/[,\n]+/).filter(k => k.trim()).length;
+                    goToStep(5);
+                } else {
+                    showError(data.error || 'Ошибка запуска мониторинга');
+                }
+            } catch (error) {
+                showError('Ошибка соединения: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Check URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('user');
+        if (userId) {
+            // Можно предзаполнить данные если есть
+        }
+    </script>
+</body>
+</html>
