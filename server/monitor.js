@@ -255,6 +255,7 @@ class TelegramMonitor {
             }
 
             const chats = [];
+            const unavailableChats = [];
             const includePeers = targetFilter.includePeers || [];
             
             // Получаем информацию о каждом чате
@@ -281,6 +282,11 @@ class TelegramMonitor {
                         entity = await client.getEntity(peer);
                     } catch (e) {
                         console.log(`Could not get entity for peer:`, e.message);
+                        // Добавляем в список недоступных
+                        unavailableChats.push({
+                            id: chatId,
+                            reason: e.message.includes('CHANNEL_PRIVATE') ? 'Приватный/недоступный канал' : e.message
+                        });
                         continue;
                     }
 
@@ -301,7 +307,8 @@ class TelegramMonitor {
                         id: entity.id.toString(),
                         title: entity.title || 'Без названия',
                         type: entity.megagroup ? 'supergroup' : 'group',
-                        username: entity.username || null
+                        username: entity.username || null,
+                        available: true
                     });
 
                 } catch (error) {
@@ -312,6 +319,7 @@ class TelegramMonitor {
             return { 
                 success: true, 
                 chats,
+                unavailableChats,
                 total: chats.length,
                 maxAllowed: MAX_CHATS_PER_USER
             };
@@ -399,15 +407,17 @@ class TelegramMonitor {
             });
 
             console.log(`Starting monitoring for user ${userId}, ${chatIds.length} chats`);
+            console.log(`Chat IDs to monitor:`, chatIds.map(id => id.toString()));
 
             // Устанавливаем обработчик новых сообщений
             const handler = async (event) => {
+                console.log(`[Monitor] New message event received for user ${userId}`);
                 await this.handleNewMessage(event, userId, user, settings);
             };
 
+            // Слушаем все сообщения (incoming и outgoing) для тестирования
             client.addEventHandler(handler, new NewMessage({
-                chats: chatIds,
-                incoming: true
+                chats: chatIds
             }));
 
             // Сохраняем обработчик для возможности отключения
@@ -437,20 +447,32 @@ class TelegramMonitor {
         try {
             const message = event.message;
             
+            const msgPreview = message.message?.substring(0, 100) || '[empty]';
+            console.log(`[Monitor] New message for user ${userId}: "${msgPreview}"`);
+            
             // Пропускаем сервисные сообщения
             if (!message.message || message.message.length === 0) {
+                console.log(`[Monitor] Skipping: empty message`);
                 return;
             }
 
             // Проверяем на соответствие ключевым словам
             const keywords = settings.keywords;
+            console.log(`[Monitor] Keywords to check:`, JSON.stringify(keywords));
+            console.log(`[Monitor] Message text: "${message.message}"`);
+            
             const matchResult = this.keywordMatcher.analyze(message.message, {
                 keywords: keywords
             });
 
+            console.log(`[Monitor] Match result: matched=${matchResult.matched}, keywords=${JSON.stringify(matchResult.matchedKeywords)}`);
+
             if (!matchResult.matched) {
+                console.log(`[Monitor] No keyword match, skipping`);
                 return;
             }
+            
+            console.log(`[Monitor] ✓ Match found! Sending notification...`);
 
             // Проверяем, не отправляли ли мы уже это уведомление
             const chatId = message.peerId?.channelId?.toString() || 

@@ -286,6 +286,7 @@ app.get('/api/folders/:folderName/chats', async (req, res) => {
         res.json({ 
             success: true, 
             chats: result.chats,
+            unavailableChats: result.unavailableChats || [],
             total: result.total,
             maxAllowed: result.maxAllowed
         });
@@ -343,7 +344,7 @@ app.post('/api/monitoring/start', async (req, res) => {
             database.users.updateSession(user.id, authData.sessionString);
         } else {
             // Создаем нового пользователя
-            const result = database.users.create(
+            database.users.create(
                 authData.user.id,
                 authData.user.username,
                 authData.phone,
@@ -352,7 +353,15 @@ app.post('/api/monitoring/start', async (req, res) => {
                 authData.sessionString,
                 null // bot_chat_id будет установлен когда пользователь напишет боту
             );
-            user = database.users.getById(result.lastInsertRowid);
+            // Получаем созданного пользователя по telegram_user_id
+            user = database.users.getByTelegramId(authData.user.id);
+        }
+        
+        if (!user) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Ошибка создания пользователя в базе данных' 
+            });
         }
 
         // Удаляем старые настройки мониторинга
