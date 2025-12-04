@@ -513,14 +513,22 @@ class TelegramMonitor {
             });
 
             // Отправляем уведомление через бота
+            console.log(`[Monitor] User bot_chat_id: ${user.bot_chat_id}`);
             if (user.bot_chat_id) {
-                await this.bot.sendMessage(user.bot_chat_id, notification, {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true
-                });
+                try {
+                    await this.bot.sendMessage(user.bot_chat_id, notification, {
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: true
+                    });
+                    console.log(`[Monitor] ✓ Notification sent to ${user.bot_chat_id}`);
 
-                // Сохраняем информацию об отправленном уведомлении
-                database.notifications.add(userId, chatId, messageId);
+                    // Сохраняем информацию об отправленном уведомлении
+                    database.notifications.add(userId, chatId, messageId);
+                } catch (sendError) {
+                    console.error(`[Monitor] Failed to send notification:`, sendError.message);
+                }
+            } else {
+                console.log(`[Monitor] ⚠ No bot_chat_id for user ${userId}, cannot send notification`);
             }
 
         } catch (error) {
@@ -559,6 +567,8 @@ class TelegramMonitor {
         console.log('Restoring monitoring for active users...');
         
         const activeUsers = database.users.getAllActive();
+        console.log(`Found ${activeUsers.length} active users in database:`, 
+            activeUsers.map(u => ({ id: u.id, phone: u.phone, hasSession: !!u.session_string })));
         
         for (const user of activeUsers) {
             try {
