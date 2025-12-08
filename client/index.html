@@ -345,6 +345,146 @@
             background: #667eea;
             color: white;
         }
+
+        /* Модальное окно с инструкцией */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 20px;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            width: 100%;
+            position: relative;
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 25px;
+            border-radius: 20px 20px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .modal-body {
+            padding: 25px;
+        }
+
+        .instruction-step {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding-bottom: 25px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .instruction-step:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .instruction-number {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .instruction-content h4 {
+            margin: 0 0 8px 0;
+            color: #333;
+        }
+
+        .instruction-content p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .instruction-content code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #c62828;
+        }
+
+        .instruction-content .note {
+            background: #fff3e0;
+            border-left: 3px solid #ff9800;
+            padding: 10px 15px;
+            margin-top: 10px;
+            border-radius: 0 8px 8px 0;
+            font-size: 13px;
+        }
+
+        .instruction-content ul {
+            margin: 10px 0 0 0;
+            padding-left: 20px;
+        }
+
+        .instruction-content li {
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .btn-open-telegram {
+            display: inline-block;
+            background: #0088cc;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .btn-open-telegram:hover {
+            background: #006699;
+        }
     </style>
 </head>
 <body>
@@ -367,8 +507,8 @@
             <div class="step active" id="step1">
                 <h2 style="margin-bottom: 20px; color: #333;">Шаг 1: API данные</h2>
                 
-                <div class="alert alert-info">
-                    ℹ️ Получите API ID и Hash на <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>
+                <div class="alert alert-info" style="cursor: pointer;" onclick="openInstructionModal()">
+                    ℹ️ <strong>Нужны API ID и Hash.</strong> <u>Нажмите сюда для подробной инструкции</u> 📖
                 </div>
 
                 <div class="form-group">
@@ -388,9 +528,9 @@
 
                 <button class="btn btn-primary" onclick="sendCode()">Получить код</button>
                 
-                <a href="https://my.telegram.org/auth" target="_blank" class="help-link">
-                    Как получить API ID и Hash?
-                </a>
+                <button type="button" class="help-link" onclick="openInstructionModal()" style="background: none; border: none; cursor: pointer;">
+                    📖 Подробная инструкция: как получить API ID и Hash
+                </button>
             </div>
 
             <!-- Step 2: Phone Code -->
@@ -822,6 +962,112 @@
         if (userId) {
             // Можно предзаполнить данные если есть
         }
+
+        // Modal functions
+        function openInstructionModal() {
+            document.getElementById('instructionModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeInstructionModal() {
+            document.getElementById('instructionModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // Close modal on overlay click
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeInstructionModal();
+            }
+        });
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeInstructionModal();
+            }
+        });
     </script>
+
+    <!-- Модальное окно с инструкцией -->
+    <div class="modal-overlay" id="instructionModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>📖 Как получить API ID и Hash</h3>
+                <button class="modal-close" onclick="closeInstructionModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="instruction-step">
+                    <div class="instruction-number">1</div>
+                    <div class="instruction-content">
+                        <h4>Откройте my.telegram.org</h4>
+                        <p>Перейдите по ссылке ниже и войдите в свой аккаунт Telegram по номеру телефона.</p>
+                        <a href="https://my.telegram.org" target="_blank" class="btn-open-telegram">
+                            🌐 Открыть my.telegram.org
+                        </a>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <div class="instruction-number">2</div>
+                    <div class="instruction-content">
+                        <h4>Войдите по номеру телефона</h4>
+                        <p>Введите номер телефона в международном формате (например: <code>+79001234567</code>).</p>
+                        <p>На этот номер придёт код подтверждения в Telegram.</p>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <div class="instruction-number">3</div>
+                    <div class="instruction-content">
+                        <h4>Перейдите в "API development tools"</h4>
+                        <p>После входа вы увидите несколько пунктов меню. Нажмите на <strong>"API development tools"</strong>.</p>
+                        <div class="note">
+                            ⚠️ Важно: Не путайте с другими разделами! Вам нужен именно "API development tools".
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <div class="instruction-number">4</div>
+                    <div class="instruction-content">
+                        <h4>Создайте новое приложение</h4>
+                        <p>Если у вас ещё нет приложения, заполните форму:</p>
+                        <ul>
+                            <li><strong>App title:</strong> любое название (например: "My Scout Bot")</li>
+                            <li><strong>Short name:</strong> короткое имя латиницей (например: "myscout")</li>
+                            <li><strong>Platform:</strong> выберите "Desktop"</li>
+                            <li><strong>Description:</strong> можно оставить пустым</li>
+                        </ul>
+                        <p style="margin-top: 10px;">Нажмите <strong>"Create application"</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <div class="instruction-number">5</div>
+                    <div class="instruction-content">
+                        <h4>Скопируйте API ID и API Hash</h4>
+                        <p>После создания приложения вы увидите:</p>
+                        <ul>
+                            <li><strong>App api_id:</strong> это ваш <code>API ID</code> (только цифры)</li>
+                            <li><strong>App api_hash:</strong> это ваш <code>API Hash</code> (буквы и цифры)</li>
+                        </ul>
+                        <div class="note">
+                            🔐 Эти данные конфиденциальны! Никому их не передавайте. Они используются только для доступа к вашему Telegram аккаунту.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <div class="instruction-number">6</div>
+                    <div class="instruction-content">
+                        <h4>Вставьте данные в форму</h4>
+                        <p>Скопируйте <code>api_id</code> и <code>api_hash</code> и вставьте их в соответствующие поля на этой странице.</p>
+                        <p style="margin-top: 10px; color: #4caf50;"><strong>✅ Готово!</strong> Теперь можно продолжить настройку бота.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
