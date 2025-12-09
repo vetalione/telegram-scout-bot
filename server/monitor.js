@@ -443,7 +443,7 @@ class TelegramMonitor {
     /**
      * Обработчик новых сообщений
      */
-    async handleNewMessage(event, userId, userSnapshot, settings) {
+    async handleNewMessage(event, userId, userSnapshot, settingsSnapshot) {
         try {
             const message = event.message;
             
@@ -464,6 +464,14 @@ class TelegramMonitor {
             const user = await database.users.getById(userId);
             if (!user) {
                 console.log(`[Monitor] User ${userId} not found in DB`);
+                return;
+            }
+
+            // ВАЖНО: Загружаем свежие настройки мониторинга из БД
+            // чтобы получить актуальные ключевые слова (могли обновиться через веб-форму)
+            const settings = await database.monitors.getByUserId(userId);
+            if (!settings) {
+                console.log(`[Monitor] Settings for user ${userId} not found in DB`);
                 return;
             }
 
