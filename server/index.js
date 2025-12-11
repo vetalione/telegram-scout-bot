@@ -35,6 +35,66 @@ bot.setMonitor(monitor);
 // Хранилище временных клиентов для авторизации
 const authClients = new Map();
 
+/**
+ * Восстанавливает сессию авторизации из БД если её нет в памяти
+ * Нужно после редеплоя Railway когда память очищается
+ */
+async function restoreAuthSession(sessionId) {
+    // Проверяем, есть ли уже в памяти
+    if (authClients.has(sessionId)) {
+        return authClients.get(sessionId);
+    }
+    
+    // Пробуем восстановить из БД
+    const dbSession = await database.auth.get(sessionId);
+    if (!dbSession) {
+        return null;
+    }
+    
+    // Если есть user_data и session_string - можно восстановить полностью
+    if (dbSession.user_data && dbSession.session_string) {
+        console.log(`[Auth] Restoring session ${sessionId} from DB after redeploy`);
+        
+        // Создаём клиент из сохранённой сессии
+        try {
+            const client = await monitor.createClientFromSession(
+                'temp_restore',
+                dbSession.api_id,
+                dbSession.api_hash,
+                dbSession.session_string
+            );
+            
+            const authData = {
+                client,
+                phone: dbSession.phone,
+                apiId: dbSession.api_id,
+                apiHash: dbSession.api_hash,
+                phoneCodeHash: dbSession.phone_code_hash,
+                user: typeof dbSession.user_data === 'string' 
+                    ? JSON.parse(dbSession.user_data) 
+                    : dbSession.user_data,
+                sessionString: dbSession.session_string,
+                createdAt: new Date(dbSession.created_at).getTime(),
+                restoredFromDB: true
+            };
+            
+            authClients.set(sessionId, authData);
+            console.log(`[Auth] Session ${sessionId} restored successfully`);
+            return authData;
+        } catch (error) {
+            console.error(`[Auth] Failed to restore session ${sessionId}:`, error.message);
+            // Удаляем битую сессию из БД
+            await database.auth.delete(sessionId);
+            return null;
+        }
+    }
+    
+    // Сессия есть в БД, но авторизация не была завершена (нет user_data)
+    // Нельзя восстановить - клиент Telegram нужен в памяти
+    console.log(`[Auth] Session ${sessionId} found in DB but auth was not completed`);
+    return null;
+}
+
 // ============ API Routes ============
 
 /**
@@ -145,6 +205,9 @@ app.post('/api/auth/verify-code', async (req, res) => {
         authData.user = result.user;
         authData.sessionString = result.sessionString;
 
+        // Сохраняем в БД для переживания редеплоя
+        await database.auth.saveUserData(sessionId, result.user, result.sessionString);
+
         res.json({ 
             success: true, 
             user: result.user 
@@ -197,6 +260,9 @@ app.post('/api/auth/verify-2fa', async (req, res) => {
         // Обновляем в Map
         authClients.set(sessionId, authData);
         
+        // Сохраняем в БД для переживания редеплоя
+        await database.auth.saveUserData(sessionId, result.user, result.sessionString);
+        
         console.log('2FA success, user saved:', authData.user?.id, 'session:', !!authData.sessionString);
 
         res.json({ 
@@ -227,7 +293,8 @@ app.get('/api/folders', async (req, res) => {
             });
         }
 
-        const authData = authClients.get(sessionId);
+        // Пробуем получить из памяти или восстановить из БД
+        const authData = await restoreAuthSession(sessionId);
         if (!authData || !authData.client) {
             return res.status(400).json({ 
                 success: false, 
@@ -266,7 +333,8 @@ app.get('/api/folders/:folderName/chats', async (req, res) => {
             });
         }
 
-        const authData = authClients.get(sessionId);
+        // Пробуем получить из памяти или восстановить из БД
+        const authData = await restoreAuthSession(sessionId);
         if (!authData || !authData.client) {
             return res.status(400).json({ 
                 success: false, 
@@ -314,7 +382,8 @@ app.post('/api/monitoring/start', async (req, res) => {
             });
         }
 
-        const authData = authClients.get(sessionId);
+        // Пробуем получить из памяти или восстановить из БД
+        const authData = await restoreAuthSession(sessionId);
         if (!authData || !authData.user || !authData.sessionString) {
             console.log('Auth check failed:', {
                 hasAuthData: !!authData,

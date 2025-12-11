@@ -74,6 +74,8 @@ async function initDatabase() {
                 api_hash TEXT,
                 phone_code_hash TEXT,
                 step TEXT DEFAULT 'phone',
+                user_data JSONB,
+                session_string TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP
             )
@@ -102,6 +104,19 @@ async function initDatabase() {
                 matches_found INTEGER DEFAULT 0,
                 notifications_sent INTEGER DEFAULT 0
             )
+        `);
+
+        // Миграция: добавляем новые колонки в auth_sessions если их нет
+        await client.query(`
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'auth_sessions' AND column_name = 'user_data') THEN
+                    ALTER TABLE auth_sessions ADD COLUMN user_data JSONB;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'auth_sessions' AND column_name = 'session_string') THEN
+                    ALTER TABLE auth_sessions ADD COLUMN session_string TEXT;
+                END IF;
+            END $$;
         `);
 
         isInitialized = true;
@@ -226,7 +241,14 @@ module.exports = {
         },
         get: (id) => getOne("SELECT * FROM auth_sessions WHERE id = $1 AND expires_at > NOW()", [id]),
         updateStep: async (id, step, phoneCodeHash = null) => {
-            await query('UPDATE auth_sessions SET step = $1, phone_code_hash = $2 WHERE id = $3', [step, phoneCodeHash, id]);
+            await query('UPDATE auth_sessions SET step = $1, phone_code_hash = $2, expires_at = NOW() + INTERVAL \'30 minutes\' WHERE id = $3', [step, phoneCodeHash, id]);
+        },
+        // Сохраняем данные пользователя и session_string после успешной авторизации
+        saveUserData: async (id, userData, sessionString) => {
+            await query(
+                'UPDATE auth_sessions SET user_data = $1, session_string = $2, expires_at = NOW() + INTERVAL \'30 minutes\' WHERE id = $3',
+                [JSON.stringify(userData), sessionString, id]
+            );
         },
         delete: async (id) => await query('DELETE FROM auth_sessions WHERE id = $1', [id]),
         cleanup: async () => await query("DELETE FROM auth_sessions WHERE expires_at < NOW()")

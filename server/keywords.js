@@ -211,11 +211,14 @@ class KeywordMatcher {
                 matchType = 'exact';
             }
 
-            // 2. Проверка по стеммам
+            // 2. Проверка по стеммам (только точное совпадение, без includes)
             if (!matched) {
                 for (const part of keywordParts) {
+                    if (part.length < 4) continue; // Пропускаем короткие слова
                     const partStem = this.stem(part);
-                    if (textStems.some(ts => ts === partStem || ts.includes(partStem) || partStem.includes(ts))) {
+                    if (partStem.length < 4) continue; // Пропускаем короткие стеммы
+                    // Только точное совпадение стеммов
+                    if (textStems.some(ts => ts === partStem)) {
                         matched = true;
                         matchType = 'stem';
                         break;
@@ -223,19 +226,17 @@ class KeywordMatcher {
                 }
             }
 
-            // 3. Проверка по синонимам
+            // 3. Проверка по синонимам (только точное совпадение стеммов)
             if (!matched) {
                 for (const part of keywordParts) {
+                    if (part.length < 4) continue; // Пропускаем короткие слова
                     const synonyms = this.getSynonyms(part);
                     for (const syn of synonyms) {
+                        if (syn.length < 4) continue; // Пропускаем короткие синонимы
                         const synStem = this.stem(syn);
-                        if (textStems.some(ts => ts === synStem || ts.includes(synStem) || synStem.includes(ts))) {
-                            matched = true;
-                            matchType = 'synonym';
-                            break;
-                        }
-                        // Также проверяем в исходных словах
-                        if (textWords.some(tw => this.fuzzyMatch(tw, syn))) {
+                        if (synStem.length < 4) continue;
+                        // Только точное совпадение стеммов синонимов
+                        if (textStems.some(ts => ts === synStem)) {
                             matched = true;
                             matchType = 'synonym';
                             break;
@@ -245,12 +246,13 @@ class KeywordMatcher {
                 }
             }
 
-            // 4. Fuzzy matching для каждого слова ключевой фразы
+            // 4. Fuzzy matching только для длинных слов (≥6 символов), порог 0.8
             if (!matched) {
                 for (const part of keywordParts) {
-                    if (part.length < 3) continue;
+                    if (part.length < 6) continue; // Fuzzy только для длинных слов
                     for (const textWord of textWords) {
-                        if (this.fuzzyMatch(textWord, part, 0.7)) {
+                        if (textWord.length < 6) continue; // И длинных слов в тексте
+                        if (this.fuzzyMatch(textWord, part, 0.8)) {
                             matched = true;
                             matchType = 'fuzzy';
                             break;
@@ -260,13 +262,13 @@ class KeywordMatcher {
                 }
             }
 
-            // 5. N-граммы для многословных ключей
+            // 5. N-граммы для многословных ключей (порог 0.75)
             if (!matched && keywordParts.length > 1) {
                 const textNgrams = this.getNgrams(normalizedText, keywordParts.length);
                 const keywordNgram = keywordParts.join(' ');
                 
                 for (const ngram of textNgrams) {
-                    if (this.fuzzyMatch(ngram, keywordNgram, 0.6)) {
+                    if (this.fuzzyMatch(ngram, keywordNgram, 0.75)) {
                         matched = true;
                         matchType = 'ngram';
                         break;
