@@ -106,6 +106,29 @@ async function initDatabase() {
             )
         `);
 
+        // Таблица хешей сообщений для дедупликации (24 часа)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS message_hashes (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                message_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, message_hash)
+            )
+        `);
+
+        // Таблица заблокированных авторов
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS blocked_authors (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                author_id TEXT NOT NULL,
+                author_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, author_id)
+            )
+        `);
+
         // Миграция: добавляем новые колонки в auth_sessions если их нет
         await client.query(`
             DO $$ 
@@ -293,6 +316,61 @@ module.exports = {
                 FROM stats
             `);
             return result;
+        }
+    },
+
+    // Дедупликация сообщений по хешу (24 часа)
+    messageHashes: {
+        add: async (userId, messageHash) => {
+            try {
+                await query(
+                    'INSERT INTO message_hashes (user_id, message_hash) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                    [userId, messageHash]
+                );
+                return true;
+            } catch (e) {
+                return false;
+            }
+        },
+        exists: async (userId, messageHash) => {
+            const result = await getOne(
+                "SELECT 1 FROM message_hashes WHERE user_id = $1 AND message_hash = $2 AND created_at > NOW() - INTERVAL '24 hours'",
+                [userId, messageHash]
+            );
+            return !!result;
+        },
+        cleanup: async () => {
+            await query("DELETE FROM message_hashes WHERE created_at < NOW() - INTERVAL '24 hours'");
+        }
+    },
+
+    // Заблокированные авторы
+    blockedAuthors: {
+        add: async (userId, authorId, authorName) => {
+            try {
+                await query(
+                    'INSERT INTO blocked_authors (user_id, author_id, author_name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+                    [userId, authorId, authorName]
+                );
+                return true;
+            } catch (e) {
+                return false;
+            }
+        },
+        exists: async (userId, authorId) => {
+            const result = await getOne(
+                'SELECT 1 FROM blocked_authors WHERE user_id = $1 AND author_id = $2',
+                [userId, authorId]
+            );
+            return !!result;
+        },
+        remove: async (userId, authorId) => {
+            await query('DELETE FROM blocked_authors WHERE user_id = $1 AND author_id = $2', [userId, authorId]);
+        },
+        getAll: (userId) => getAll('SELECT * FROM blocked_authors WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
+        count: async (userId) => {
+            const result = await getOne('SELECT COUNT(*) as count FROM blocked_authors WHERE user_id = $1', [userId]);
+            return parseInt(result?.count || 0);
         }
     }
 };

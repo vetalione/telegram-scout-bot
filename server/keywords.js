@@ -187,6 +187,29 @@ class KeywordMatcher {
     }
 
     /**
+     * Проверяет, является ли ключевое слово "точной фразой" (в кавычках)
+     * Возвращает { isExact: boolean, cleanKeyword: string }
+     */
+    parseKeywordMode(keyword) {
+        const trimmed = keyword.trim();
+        
+        // Проверяем на кавычки (разные виды: "", «», '')
+        if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+            (trimmed.startsWith('«') && trimmed.endsWith('»')) ||
+            (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            return {
+                isExact: true,
+                cleanKeyword: trimmed.slice(1, -1)
+            };
+        }
+        
+        return {
+            isExact: false,
+            cleanKeyword: trimmed
+        };
+    }
+
+    /**
      * Основной метод проверки - улучшенный
      */
     match(text, keywords) {
@@ -201,13 +224,30 @@ class KeywordMatcher {
         const matchDetails = [];
 
         for (const keyword of keywords) {
-            const keywordParts = this.normalizeText(keyword).split(' ').filter(w => w.length > 1);
+            // Парсим режим ключевого слова (точный или умный)
+            const { isExact, cleanKeyword } = this.parseKeywordMode(keyword);
+            const keywordParts = this.normalizeText(cleanKeyword).split(' ').filter(w => w.length > 1);
             let matched = false;
             let matchType = '';
             let matchedWord = ''; // Какое слово из текста сматчилось
 
+            // Для точных фраз (в кавычках) - только exact match
+            if (isExact) {
+                if (normalizedText.includes(this.normalizeText(cleanKeyword))) {
+                    matched = true;
+                    matchType = 'exact (strict)';
+                    matchedWord = cleanKeyword;
+                }
+                // Для точных фраз не используем другие методы!
+                if (matched) {
+                    matchedKeywords.push(keyword);
+                    matchDetails.push({ keyword, matchType, matchedWord });
+                }
+                continue;
+            }
+
             // 1. Прямое вхождение фразы
-            if (normalizedText.includes(this.normalizeText(keyword))) {
+            if (normalizedText.includes(this.normalizeText(cleanKeyword))) {
                 matched = true;
                 matchType = 'exact';
                 matchedWord = keyword;

@@ -2,11 +2,19 @@ const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { NewMessage } = require('telegram/events');
 const { computeCheck } = require('telegram/Password');
+const crypto = require('crypto');
 const database = require('./database');
 const { KeywordMatcher, formatNotification } = require('./keywords');
 
 const MAX_CHATS_PER_USER = 50;
 const FLOOD_WAIT_MULTIPLIER = 1.5;
+
+// Создание хеша текста сообщения для дедупликации
+function createMessageHash(text) {
+    // Нормализуем текст: lowercase, убираем пробелы по краям
+    const normalized = text.toLowerCase().trim();
+    return crypto.createHash('md5').update(normalized).digest('hex');
+}
 
 class TelegramMonitor {
     constructor(bot) {
@@ -515,6 +523,21 @@ class TelegramMonitor {
                 sender = { id: 'unknown', firstName: 'Неизвестно' };
             }
 
+            const senderId = sender.id?.toString() || 'unknown';
+
+            // Проверяем, не заблокирован ли автор
+            if (senderId !== 'unknown' && await database.blockedAuthors.exists(userId, senderId)) {
+                console.log(`[Monitor] Skipping: author ${senderId} is blocked by user ${userId}`);
+                return;
+            }
+
+            // Проверяем на дубликат сообщения (по хешу текста за 24 часа)
+            const messageHash = createMessageHash(message.message);
+            if (await database.messageHashes.exists(userId, messageHash)) {
+                console.log(`[Monitor] Skipping: duplicate message (hash: ${messageHash.substring(0, 8)}...)`);
+                return;
+            }
+
             // Получаем информацию о чате
             let chat;
             try {
@@ -527,7 +550,7 @@ class TelegramMonitor {
             const notification = formatNotification({
                 firstName: sender.firstName || 'Неизвестно',
                 username: sender.username,
-                userId: sender.id?.toString() || 'unknown',
+                userId: senderId,
                 messageText: message.message,
                 chatTitle: chat.title || 'Неизвестный чат',
                 chatId: chatId,
@@ -536,18 +559,44 @@ class TelegramMonitor {
                 matchDetails: matchResult.matchDetails || []
             });
 
+            // Кнопка для блокировки автора
+            const inlineKeyboard = {
+                inline_keyboard: []
+            };
+            
+            // Добавляем кнопку только если известен ID автора
+            if (senderId !== 'unknown') {
+                const authorName = sender.firstName || sender.username || 'автора';
+                inlineKeyboard.inline_keyboard.push([
+                    {
+                        text: '🚷 Заблокировать автора',
+                        callback_data: `block_author:${senderId}:${authorName.substring(0, 30)}`
+                    }
+                ]);
+            }
+
             // Отправляем уведомление через бота
             console.log(`[Monitor] User bot_chat_id: ${user.bot_chat_id}`);
             if (user.bot_chat_id) {
                 try {
-                    await this.bot.sendMessage(user.bot_chat_id, notification, {
+                    const messageOptions = {
                         parse_mode: 'Markdown',
                         disable_web_page_preview: true
-                    });
+                    };
+                    
+                    // Добавляем кнопки только если они есть
+                    if (inlineKeyboard.inline_keyboard.length > 0) {
+                        messageOptions.reply_markup = inlineKeyboard;
+                    }
+                    
+                    await this.bot.sendMessage(user.bot_chat_id, notification, messageOptions);
                     console.log(`[Monitor] ✓ Notification sent to ${user.bot_chat_id}`);
 
                     // Сохраняем информацию об отправленном уведомлении
                     await database.notifications.add(userId, chatId, messageId);
+                    
+                    // Сохраняем хеш сообщения для дедупликации
+                    await database.messageHashes.add(userId, messageHash);
                     
                     // Считаем отправленное уведомление
                     await database.stats.increment('notifications_sent');

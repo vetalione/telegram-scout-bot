@@ -277,6 +277,51 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
                     }
                 }
             }
+
+            // Обработка блокировки автора
+            if (data.startsWith('block_author:')) {
+                const parts = data.split(':');
+                const authorId = parts[1];
+                const authorName = parts[2] || 'Неизвестный';
+
+                const user = await database.users.getByTelegramId(userId);
+                if (user) {
+                    const success = await database.blockedAuthors.add(user.id, authorId, authorName);
+                    
+                    if (success) {
+                        await this.bot.answerCallbackQuery(query.id, {
+                            text: `Автор ${authorName} заблокирован`,
+                            show_alert: true
+                        });
+                        
+                        // Редактируем сообщение, убираем кнопку
+                        try {
+                            await this.bot.editMessageReplyMarkup(
+                                { inline_keyboard: [[{ text: '🚷 Автор заблокирован', callback_data: 'noop' }]] },
+                                { chat_id: chatId, message_id: query.message.message_id }
+                            );
+                        } catch (e) {
+                            // Игнорируем ошибки редактирования
+                        }
+                        
+                        const blockedCount = await database.blockedAuthors.count(user.id);
+                        await this.bot.sendMessage(chatId, 
+                            `🚷 *Автор заблокирован*\n\nВы больше не будете получать уведомления от пользователя *${authorName}* (ID: \`${authorId}\`).\n\nВсего заблокировано авторов: ${blockedCount}`,
+                            { parse_mode: 'Markdown' }
+                        );
+                    } else {
+                        await this.bot.answerCallbackQuery(query.id, {
+                            text: 'Автор уже заблокирован',
+                            show_alert: false
+                        });
+                    }
+                }
+            }
+
+            // Пустая кнопка (noop)
+            if (data === 'noop') {
+                await this.bot.answerCallbackQuery(query.id);
+            }
         });
 
         // Логирование ошибок
