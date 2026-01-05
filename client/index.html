@@ -485,6 +485,116 @@
         .btn-open-telegram:hover {
             background: #006699;
         }
+
+        /* Инструкция по ключевым словам */
+        .keywords-guide {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .keywords-guide h4 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .keyword-mode {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .keyword-mode:nth-child(2) {
+            border-left-color: #4caf50;
+        }
+
+        .keyword-mode:nth-child(3) {
+            border-left-color: #ff9800;
+        }
+
+        .keyword-mode-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .keyword-mode-content {
+            flex: 1;
+        }
+
+        .keyword-mode-content strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .keyword-mode-content p {
+            margin: 0;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .keyword-mode-content code {
+            background: #e8f4fd;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #1565c0;
+            font-size: 12px;
+        }
+
+        .keyword-examples {
+            margin-top: 15px;
+            padding: 12px;
+            background: #fff3e0;
+            border-radius: 8px;
+        }
+
+        .keyword-examples strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #e65100;
+        }
+
+        .keyword-examples code {
+            display: block;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .toggle-guide {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0;
+            margin-top: 10px;
+            text-decoration: underline;
+        }
+
+        .toggle-guide:hover {
+            color: #764ba2;
+        }
+
+        .keywords-guide-content {
+            display: none;
+        }
+
+        .keywords-guide-content.show {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -601,13 +711,48 @@
             <div class="step" id="step4">
                 <h2 style="margin-bottom: 20px; color: #333;">Шаг 4: Ключевые слова</h2>
                 
-                <div class="alert alert-info">
-                    🔑 Укажите ключевые слова или фразы для поиска
+                <div class="keywords-guide">
+                    <h4>📖 Как использовать ключевые слова</h4>
+                    <button class="toggle-guide" onclick="toggleKeywordsGuide()">Показать инструкцию ▼</button>
+                    
+                    <div class="keywords-guide-content" id="keywordsGuideContent">
+                        <div class="keyword-mode">
+                            <span class="keyword-mode-icon">🔍</span>
+                            <div class="keyword-mode-content">
+                                <strong>Обычный режим: <code>слово</code></strong>
+                                <p>Умный поиск: находит слово + его формы + синонимы + опечатки.</p>
+                                <p>Пример: <code>маркетолог</code> найдёт "маркетолога", "маркетологу", "marketer"</p>
+                            </div>
+                        </div>
+
+                        <div class="keyword-mode">
+                            <span class="keyword-mode-icon">📌</span>
+                            <div class="keyword-mode-content">
+                                <strong>Точная фраза: <code>"фраза в кавычках"</code></strong>
+                                <p>Ищет только точное вхождение фразы, без умного поиска.</p>
+                                <p>Пример: <code>"community manager"</code> найдёт только "community manager"</p>
+                            </div>
+                        </div>
+
+                        <div class="keyword-mode">
+                            <span class="keyword-mode-icon">🎯</span>
+                            <div class="keyword-mode-content">
+                                <strong>Все слова обязательны: <code>[несколько слов]</code></strong>
+                                <p>Каждое слово должно быть в тексте (с умным поиском), но не обязательно рядом.</p>
+                                <p>Пример: <code>[community manager]</code> найдёт "Looking for community... need manager"</p>
+                            </div>
+                        </div>
+
+                        <div class="keyword-examples">
+                            <strong>💡 Пример настройки для поиска маркетинговых услуг:</strong>
+                            <code>[community manager], [social media manager], [web3 marketing],<br>"looking for agency", маркетолог, GTM, KOL</code>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label>Ключевые слова</label>
-                    <textarea id="keywords" placeholder="ищу дизайнера&#10;нужен модератор&#10;посоветуйте продюссера"></textarea>
+                    <textarea id="keywords" placeholder="[community manager]&#10;\"marketing specialist\"&#10;маркетолог&#10;KOL"></textarea>
                     <p class="keywords-hint">Каждое слово/фраза на новой строке или через запятую</p>
                 </div>
 
@@ -961,6 +1106,20 @@
         const userId = urlParams.get('user');
         if (userId) {
             // Можно предзаполнить данные если есть
+        }
+
+        // Toggle keywords guide
+        function toggleKeywordsGuide() {
+            const content = document.getElementById('keywordsGuideContent');
+            const button = document.querySelector('.toggle-guide');
+            
+            if (content.classList.contains('show')) {
+                content.classList.remove('show');
+                button.textContent = 'Показать инструкцию ▼';
+            } else {
+                content.classList.add('show');
+                button.textContent = 'Скрыть инструкцию ▲';
+            }
         }
 
         // Modal functions
