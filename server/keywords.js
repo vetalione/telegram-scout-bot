@@ -204,11 +204,13 @@ class KeywordMatcher {
             const keywordParts = this.normalizeText(keyword).split(' ').filter(w => w.length > 1);
             let matched = false;
             let matchType = '';
+            let matchedWord = ''; // Какое слово из текста сматчилось
 
             // 1. Прямое вхождение фразы
             if (normalizedText.includes(this.normalizeText(keyword))) {
                 matched = true;
                 matchType = 'exact';
+                matchedWord = keyword;
             }
 
             // 2. Проверка по стеммам (только точное совпадение, без includes)
@@ -218,9 +220,11 @@ class KeywordMatcher {
                     const partStem = this.stem(part);
                     if (partStem.length < 4) continue; // Пропускаем короткие стеммы
                     // Только точное совпадение стеммов
-                    if (textStems.some(ts => ts === partStem)) {
+                    const stemIndex = textStems.findIndex(ts => ts === partStem);
+                    if (stemIndex !== -1) {
                         matched = true;
                         matchType = 'stem';
+                        matchedWord = textWords[stemIndex] + ' (stem: ' + partStem + ')';
                         break;
                     }
                 }
@@ -236,9 +240,11 @@ class KeywordMatcher {
                         const synStem = this.stem(syn);
                         if (synStem.length < 4) continue;
                         // Только точное совпадение стеммов синонимов
-                        if (textStems.some(ts => ts === synStem)) {
+                        const stemIndex = textStems.findIndex(ts => ts === synStem);
+                        if (stemIndex !== -1) {
                             matched = true;
                             matchType = 'synonym';
+                            matchedWord = textWords[stemIndex] + ' → ' + syn + ' (synonym of ' + part + ')';
                             break;
                         }
                     }
@@ -255,6 +261,7 @@ class KeywordMatcher {
                         if (this.fuzzyMatch(textWord, part, 0.8)) {
                             matched = true;
                             matchType = 'fuzzy';
+                            matchedWord = textWord + ' ≈ ' + part;
                             break;
                         }
                     }
@@ -271,6 +278,7 @@ class KeywordMatcher {
                     if (this.fuzzyMatch(ngram, keywordNgram, 0.75)) {
                         matched = true;
                         matchType = 'ngram';
+                        matchedWord = ngram + ' ≈ ' + keywordNgram;
                         break;
                     }
                 }
@@ -278,7 +286,7 @@ class KeywordMatcher {
 
             if (matched) {
                 matchedKeywords.push(keyword);
-                matchDetails.push({ keyword, matchType });
+                matchDetails.push({ keyword, matchType, matchedWord });
             }
         }
 
@@ -394,12 +402,18 @@ function formatNotification(data) {
 
     const usernameDisplay = username ? `@${username}` : 'нет';
     
-    // Показываем детали совпадения с типом матча
+    // Показываем детали совпадения с типом матча и найденным словом
     let keywordsDisplay = '';
     if (matchedKeywords.length > 0) {
         if (matchDetails && matchDetails.length > 0) {
-            const detailsStr = matchDetails.map(d => `"${d.keyword}" (${d.matchType})`).join(', ');
-            keywordsDisplay = `\n🔑 *Совпадения:* ${detailsStr}`;
+            const detailsStr = matchDetails.map(d => {
+                let detail = `"${d.keyword}" (${d.matchType})`;
+                if (d.matchedWord) {
+                    detail += `\n   └ Найдено: "${d.matchedWord}"`;
+                }
+                return detail;
+            }).join('\n');
+            keywordsDisplay = `\n🔑 *Совпадения:*\n${detailsStr}`;
         } else {
             keywordsDisplay = `\n🔑 *Ключевые слова:* ${matchedKeywords.join(', ')}`;
         }

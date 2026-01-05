@@ -485,6 +485,7 @@ class TelegramMonitor {
             });
 
             console.log(`[Monitor] Match result: matched=${matchResult.matched}, keywords=${JSON.stringify(matchResult.matchedKeywords)}`);
+            console.log(`[Monitor] Match details:`, JSON.stringify(matchResult.matchDetails, null, 2));
 
             if (!matchResult.matched) {
                 console.log(`[Monitor] No keyword match, skipping`);
