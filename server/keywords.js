@@ -187,11 +187,22 @@ class KeywordMatcher {
     }
 
     /**
-     * Проверяет, является ли ключевое слово "точной фразой" (в кавычках)
-     * Возвращает { isExact: boolean, cleanKeyword: string }
+     * Проверяет режим ключевого слова:
+     * - "фраза" → точное вхождение (isExact)
+     * - [фраза] → все слова должны быть (isAllRequired)
+     * - фраза → любое слово (обычный режим)
      */
     parseKeywordMode(keyword) {
         const trimmed = keyword.trim();
+        
+        // Проверяем на квадратные скобки [все слова обязательны]
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            return {
+                isExact: false,
+                isAllRequired: true,
+                cleanKeyword: trimmed.slice(1, -1)
+            };
+        }
         
         // Проверяем на кавычки (разные виды: "", «», '')
         if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
@@ -199,14 +210,65 @@ class KeywordMatcher {
             (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
             return {
                 isExact: true,
+                isAllRequired: false,
                 cleanKeyword: trimmed.slice(1, -1)
             };
         }
         
         return {
             isExact: false,
+            isAllRequired: false,
             cleanKeyword: trimmed
         };
+    }
+
+    /**
+     * Проверяет, найдено ли слово в тексте (через stem, synonym или fuzzy)
+     * Возвращает { found: boolean, matchType: string, matchedWord: string }
+     */
+    findWordInText(word, textWords, textStems) {
+        const wordNorm = this.normalizeText(word);
+        const wordStem = this.stem(wordNorm);
+        
+        // 1. Точное совпадение слова
+        const exactIndex = textWords.findIndex(tw => tw === wordNorm);
+        if (exactIndex !== -1) {
+            return { found: true, matchType: 'exact', matchedWord: textWords[exactIndex] };
+        }
+        
+        // 2. Совпадение по стемму
+        if (wordStem.length >= 4) {
+            const stemIndex = textStems.findIndex(ts => ts === wordStem);
+            if (stemIndex !== -1) {
+                return { found: true, matchType: 'stem', matchedWord: textWords[stemIndex] };
+            }
+        }
+        
+        // 3. Совпадение по синонимам
+        if (wordNorm.length >= 4) {
+            const synonyms = this.getSynonyms(wordNorm);
+            for (const syn of synonyms) {
+                if (syn.length < 4) continue;
+                const synStem = this.stem(syn);
+                if (synStem.length < 4) continue;
+                
+                const synIndex = textStems.findIndex(ts => ts === synStem);
+                if (synIndex !== -1) {
+                    return { found: true, matchType: 'synonym', matchedWord: textWords[synIndex] + ' → ' + syn };
+                }
+            }
+        }
+        
+        // 4. Fuzzy matching (только для длинных слов)
+        if (wordNorm.length >= 6) {
+            for (let i = 0; i < textWords.length; i++) {
+                if (textWords[i].length >= 6 && this.fuzzyMatch(textWords[i], wordNorm, 0.8)) {
+                    return { found: true, matchType: 'fuzzy', matchedWord: textWords[i] + ' ≈ ' + wordNorm };
+                }
+            }
+        }
+        
+        return { found: false, matchType: '', matchedWord: '' };
     }
 
     /**
@@ -224,8 +286,8 @@ class KeywordMatcher {
         const matchDetails = [];
 
         for (const keyword of keywords) {
-            // Парсим режим ключевого слова (точный или умный)
-            const { isExact, cleanKeyword } = this.parseKeywordMode(keyword);
+            // Парсим режим ключевого слова (точный, все обязательны, или умный)
+            const { isExact, isAllRequired, cleanKeyword } = this.parseKeywordMode(keyword);
             const keywordParts = this.normalizeText(cleanKeyword).split(' ').filter(w => w.length > 1);
             let matched = false;
             let matchType = '';
@@ -240,6 +302,33 @@ class KeywordMatcher {
                 }
                 // Для точных фраз не используем другие методы!
                 if (matched) {
+                    matchedKeywords.push(keyword);
+                    matchDetails.push({ keyword, matchType, matchedWord });
+                }
+                continue;
+            }
+
+            // Для режима [все слова обязательны] - каждое слово должно быть найдено
+            if (isAllRequired && keywordParts.length > 1) {
+                const foundWords = [];
+                const matchTypes = [];
+                let allFound = true;
+                
+                for (const part of keywordParts) {
+                    const result = this.findWordInText(part, textWords, textStems);
+                    if (result.found) {
+                        foundWords.push(result.matchedWord);
+                        matchTypes.push(result.matchType);
+                    } else {
+                        allFound = false;
+                        break;
+                    }
+                }
+                
+                if (allFound) {
+                    matched = true;
+                    matchType = 'all-required (' + [...new Set(matchTypes)].join('+') + ')';
+                    matchedWord = foundWords.join(' + ');
                     matchedKeywords.push(keyword);
                     matchDetails.push({ keyword, matchType, matchedWord });
                 }
