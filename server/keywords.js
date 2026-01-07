@@ -236,6 +236,17 @@ class KeywordMatcher {
             return { found: true, matchType: 'exact', matchedWord: textWords[exactIndex] };
         }
         
+        // 1.5. Для коротких слов (3-4 символа) проверяем префикс
+        // Это позволяет KOL находить KOLs, API находить APIs и т.д.
+        if (wordNorm.length >= 3 && wordNorm.length <= 4) {
+            const prefixIndex = textWords.findIndex(tw => 
+                tw.startsWith(wordNorm) && tw.length <= wordNorm.length + 2
+            );
+            if (prefixIndex !== -1) {
+                return { found: true, matchType: 'prefix', matchedWord: textWords[prefixIndex] };
+            }
+        }
+        
         // 2. Совпадение по стемму
         if (wordStem.length >= 4) {
             const stemIndex = textStems.findIndex(ts => ts === wordStem);
