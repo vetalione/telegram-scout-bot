@@ -103,8 +103,11 @@ async function restoreAuthSession(sessionId) {
 app.post('/api/auth/send-code', async (req, res) => {
     try {
         const { apiId, apiHash, phone } = req.body;
+        
+        console.log(`[Auth] Send-code request for phone: ${phone}`);
 
         if (!apiId || !apiHash || !phone) {
+            console.log(`[Auth] Missing fields: apiId=${!!apiId}, apiHash=${!!apiHash}, phone=${!!phone}`);
             return res.status(400).json({ 
                 success: false, 
                 error: 'Необходимо указать apiId, apiHash и phone' 
@@ -113,12 +116,16 @@ app.post('/api/auth/send-code', async (req, res) => {
 
         // Создаем сессию авторизации
         const sessionId = uuidv4();
+        console.log(`[Auth] Created session ${sessionId} for ${phone}`);
         
         // Создаем клиент для авторизации
+        console.log(`[Auth] Creating auth client...`);
         const client = await monitor.createAuthClient(apiId, apiHash);
+        console.log(`[Auth] Client created, sending code...`);
         
         // Отправляем код
         const result = await monitor.sendCode(client, phone);
+        console.log(`[Auth] SendCode result:`, result.success ? 'success' : result.error);
         
         if (!result.success) {
             await client.disconnect();

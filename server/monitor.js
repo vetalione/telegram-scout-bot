@@ -51,6 +51,7 @@ class TelegramMonitor {
      */
     async sendCode(client, phone) {
         try {
+            console.log(`[Monitor] Sending code to ${phone}...`);
             const result = await client.invoke(
                 new Api.auth.SendCode({
                     phoneNumber: phone,
@@ -59,18 +60,34 @@ class TelegramMonitor {
                     settings: new Api.CodeSettings({})
                 })
             );
+            console.log(`[Monitor] Code sent successfully to ${phone}, type: ${result.type?.className}`);
             return {
                 success: true,
                 phoneCodeHash: result.phoneCodeHash
             };
         } catch (error) {
-            console.error('Error sending code:', error);
+            console.error(`[Monitor] Error sending code to ${phone}:`, error.message);
             
             if (error.message.includes('FLOOD_WAIT')) {
                 const waitTime = parseInt(error.message.match(/\d+/)?.[0] || 60);
+                console.error(`[Monitor] FLOOD_WAIT: ${waitTime} seconds`);
                 return {
                     success: false,
                     error: `Слишком много попыток. Подождите ${waitTime} секунд.`
+                };
+            }
+            
+            if (error.message.includes('PHONE_NUMBER_INVALID')) {
+                return {
+                    success: false,
+                    error: 'Неверный формат номера телефона. Используйте международный формат: +79991234567'
+                };
+            }
+            
+            if (error.message.includes('API_ID_INVALID')) {
+                return {
+                    success: false,
+                    error: 'Неверный API ID. Проверьте данные на my.telegram.org'
                 };
             }
             
