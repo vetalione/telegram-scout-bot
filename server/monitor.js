@@ -629,6 +629,39 @@ class TelegramMonitor {
                     await database.stats.increment('notifications_sent');
                 } catch (sendError) {
                     console.error(`[Monitor] Failed to send notification:`, sendError.message);
+                    
+                    // Если ошибка связана с кнопками (BUTTON_USER_INVALID), пробуем без кнопок
+                    if (sendError.message.includes('BUTTON_USER_INVALID') || 
+                        sendError.message.includes('BUTTON_URL_INVALID')) {
+                        try {
+                            console.log(`[Monitor] Retrying without user button...`);
+                            
+                            // Убираем кнопку "Написать автору", оставляем только "Заблокировать"
+                            const fallbackKeyboard = {
+                                inline_keyboard: inlineKeyboard.inline_keyboard.filter(
+                                    row => !row.some(btn => btn.url?.startsWith('tg://user'))
+                                )
+                            };
+                            
+                            const fallbackOptions = {
+                                parse_mode: 'Markdown',
+                                disable_web_page_preview: true
+                            };
+                            
+                            if (fallbackKeyboard.inline_keyboard.length > 0) {
+                                fallbackOptions.reply_markup = fallbackKeyboard;
+                            }
+                            
+                            await this.bot.sendMessage(user.bot_chat_id, notification, fallbackOptions);
+                            console.log(`[Monitor] ✓ Notification sent (without user button)`);
+                            
+                            await database.notifications.add(userId, chatId, messageId);
+                            await database.messageHashes.add(userId, messageHash);
+                            await database.stats.increment('notifications_sent');
+                        } catch (retryError) {
+                            console.error(`[Monitor] Retry also failed:`, retryError.message);
+                        }
+                    }
                 }
             } else {
                 console.log(`[Monitor] ⚠ No bot_chat_id for user ${userId}, cannot send notification`);
