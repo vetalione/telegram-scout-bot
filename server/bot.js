@@ -8,6 +8,7 @@ class NotificationBot {
     constructor(token) {
         this.bot = new TelegramBot(token, { polling: true });
         this.monitor = null; // Будет установлен позже
+        this.awaitingKeywords = new Map(); // Для отслеживания ожидания ввода ключевых слов
         this.setupHandlers();
     }
 
@@ -66,6 +67,7 @@ class NotificationBot {
 *Команды:*
 /status - проверить статус мониторинга
 /update - обновить список чатов из папки
+/keywords - изменить ключевые слова
 /stop - остановить мониторинг
 /help - показать справку
 
@@ -227,6 +229,7 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
 /start - начать работу
 /status - статус мониторинга
 /update - обновить список чатов из папки
+/keywords - изменить ключевые слова
 /stop - остановить мониторинг
 /help - эта справка
 
@@ -291,11 +294,142 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
             }
         });
 
+        // Обработка команды /keywords - показать/изменить ключевые слова
+        this.bot.onText(/\/keywords/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id.toString();
+
+            const user = await database.users.getByTelegramId(userId);
+            
+            if (!user) {
+                await this.bot.sendMessage(chatId, 
+                    '❌ Мониторинг не настроен.\n\nИспользуйте веб-интерфейс для первоначальной настройки.',
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            const settings = await database.monitors.getByUserId(user.id);
+            if (!settings) {
+                await this.bot.sendMessage(chatId, '❌ Настройки мониторинга не найдены.');
+                return;
+            }
+
+            const keywordsList = settings.keywords?.length > 0 
+                ? settings.keywords.map((k, i) => `${i + 1}. \`${k}\``).join('\n')
+                : '_Не заданы_';
+
+            const message = `
+🔑 *Текущие ключевые слова:*
+
+${keywordsList}
+
+*Форматы поиска:*
+• \`слово\` — умный поиск (стемминг, синонимы)
+• \`"точная фраза"\` — только точное совпадение
+• \`[все слова]\` — все слова должны быть в тексте
+
+Чтобы изменить, нажмите кнопку ниже и отправьте новый список слов (каждое с новой строки или через запятую).
+            `;
+
+            await this.bot.sendMessage(chatId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '✏️ Изменить ключевые слова', callback_data: 'edit_keywords' }],
+                        [{ text: '❌ Отмена', callback_data: 'cancel_keywords' }]
+                    ]
+                }
+            });
+        });
+
+        // Обработка ввода новых ключевых слов
+        this.bot.on('message', async (msg) => {
+            // Пропускаем команды
+            if (msg.text?.startsWith('/')) return;
+            
+            const chatId = msg.chat.id;
+            const userId = msg.from.id.toString();
+            
+            // Проверяем, ожидаем ли мы ввод ключевых слов от этого пользователя
+            if (!this.awaitingKeywords.has(userId)) return;
+            
+            const user = await database.users.getByTelegramId(userId);
+            if (!user) return;
+            
+            const text = msg.text?.trim();
+            if (!text) {
+                await this.bot.sendMessage(chatId, '❌ Пустое сообщение. Отправьте ключевые слова или /keywords для отмены.');
+                return;
+            }
+            
+            // Парсим ключевые слова (разделители: новая строка или запятая)
+            let keywords = text
+                .split(/[\n,]+/)
+                .map(k => k.trim())
+                .filter(k => k.length > 0);
+            
+            if (keywords.length === 0) {
+                await this.bot.sendMessage(chatId, '❌ Не удалось распознать ключевые слова. Попробуйте снова.');
+                return;
+            }
+            
+            // Ограничение на количество
+            if (keywords.length > 50) {
+                await this.bot.sendMessage(chatId, `⚠️ Слишком много ключевых слов (${keywords.length}). Максимум: 50. Сокращаю список.`);
+                keywords = keywords.slice(0, 50);
+            }
+            
+            try {
+                // Обновляем в базе данных
+                await database.monitors.updateKeywords(user.id, keywords);
+                
+                // Убираем из режима ожидания
+                this.awaitingKeywords.delete(userId);
+                
+                const keywordsList = keywords.map((k, i) => `${i + 1}. \`${k}\``).join('\n');
+                
+                await this.bot.sendMessage(chatId, 
+                    `✅ *Ключевые слова обновлены!*\n\n${keywordsList}\n\nВсего: ${keywords.length} слов/фраз`,
+                    { parse_mode: 'Markdown' }
+                );
+                
+                console.log(`[Bot] Keywords updated for user ${user.id}: ${keywords.length} keywords`);
+                
+            } catch (error) {
+                console.error('[Bot] Error updating keywords:', error);
+                await this.bot.sendMessage(chatId, `❌ Ошибка сохранения: ${error.message}`);
+            }
+        });
+
         // Обработка callback кнопок
         this.bot.on('callback_query', async (query) => {
             const chatId = query.message.chat.id;
             const userId = query.from.id.toString();
             const data = query.data;
+
+            // Обработка редактирования ключевых слов
+            if (data === 'edit_keywords') {
+                this.awaitingKeywords.set(userId, true);
+                await this.bot.answerCallbackQuery(query.id);
+                await this.bot.sendMessage(chatId, 
+                    `✏️ *Введите новые ключевые слова*\n\nОтправьте список слов/фраз, каждое с новой строки или через запятую.\n\n*Примеры форматов:*\n• \`маркетинг\` — умный поиск\n• \`"GTM"\` — точное совпадение\n• \`[head of marketing]\` — все слова обязательны\n\nДля отмены отправьте /keywords`,
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            if (data === 'cancel_keywords') {
+                this.awaitingKeywords.delete(userId);
+                await this.bot.answerCallbackQuery(query.id, { text: 'Отменено' });
+                await this.bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
+                return;
+            }
+
+            if (data === 'noop') {
+                await this.bot.answerCallbackQuery(query.id);
+                return;
+            }
 
             if (data === 'stop_monitoring') {
                 const user = await database.users.getByTelegramId(userId);

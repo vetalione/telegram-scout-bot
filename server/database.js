@@ -220,6 +220,9 @@ module.exports = {
         update: async (userId, folderName, keywords) => {
             await query('UPDATE monitor_settings SET folder_name = $1, keywords = $2 WHERE user_id = $3', [folderName, JSON.stringify(keywords), userId]);
         },
+        updateKeywords: async (userId, keywords) => {
+            await query('UPDATE monitor_settings SET keywords = $1 WHERE user_id = $2', [JSON.stringify(keywords), userId]);
+        },
         setActive: async (userId, isActive) => {
             await query('UPDATE monitor_settings SET is_active = $1 WHERE user_id = $2', [isActive, userId]);
         },
