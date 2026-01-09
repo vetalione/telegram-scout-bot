@@ -65,6 +65,7 @@ class NotificationBot {
 
 *Команды:*
 /status - проверить статус мониторинга
+/update - обновить список чатов из папки
 /stop - остановить мониторинг
 /help - показать справку
 
@@ -225,6 +226,7 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
 *Команды:*
 /start - начать работу
 /status - статус мониторинга
+/update - обновить список чатов из папки
 /stop - остановить мониторинг
 /help - эта справка
 
@@ -237,6 +239,56 @@ ${statusEmoji} *Статус мониторинга:* ${statusText}
             await this.bot.sendMessage(chatId, helpMessage, {
                 parse_mode: 'Markdown'
             });
+        });
+
+        // Обработка команды /update - обновить список чатов из папки
+        this.bot.onText(/\/update/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id.toString();
+
+            const user = await database.users.getByTelegramId(userId);
+            
+            if (!user) {
+                await this.bot.sendMessage(chatId, 
+                    '❌ Мониторинг не настроен.\n\nИспользуйте веб-интерфейс для первоначальной настройки.',
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            if (!this.monitor) {
+                await this.bot.sendMessage(chatId, '❌ Ошибка: сервис мониторинга недоступен.');
+                return;
+            }
+
+            const settings = await database.monitors.getByUserId(user.id);
+            if (!settings) {
+                await this.bot.sendMessage(chatId, '❌ Настройки мониторинга не найдены.');
+                return;
+            }
+
+            await this.bot.sendMessage(chatId, `🔄 Обновляю список чатов из папки "${settings.folder_name}"...`);
+
+            try {
+                // Перезапускаем мониторинг - это обновит список чатов из папки
+                const result = await this.monitor.startMonitoring(user.id);
+                
+                if (result.success) {
+                    const chatsCount = await database.chats.count(user.id);
+                    await this.bot.sendMessage(chatId, 
+                        `✅ Список чатов обновлён!\n\n📁 Папка: ${settings.folder_name}\n💬 Чатов в мониторинге: ${chatsCount}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                } else {
+                    await this.bot.sendMessage(chatId, 
+                        `❌ Ошибка обновления: ${result.error}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                }
+            } catch (error) {
+                console.error('[Bot] Update command error:', error);
+                await this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+            }
         });
 
         // Обработка callback кнопок
