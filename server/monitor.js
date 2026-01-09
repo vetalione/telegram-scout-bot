@@ -433,6 +433,7 @@ class TelegramMonitor {
 
             console.log(`Starting monitoring for user ${userId}, ${chatIds.length} chats`);
             console.log(`Chat IDs to monitor:`, chatIds.map(id => id.toString()));
+            console.log(`Keywords for user ${userId}:`, settings.keywords);
 
             // Устанавливаем обработчик новых сообщений
             const handler = async (event) => {
