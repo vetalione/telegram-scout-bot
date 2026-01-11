@@ -360,6 +360,8 @@ class TelegramMonitor {
      */
     async createClientFromSession(userId, apiId, apiHash, sessionString) {
         try {
+            console.log(`[Monitor] Creating client for user ${userId} from session...`);
+            
             const client = new TelegramClient(
                 new StringSession(sessionString),
                 parseInt(apiId),
@@ -371,14 +373,16 @@ class TelegramMonitor {
             );
             
             await client.connect();
+            console.log(`[Monitor] Client ${userId} connected, checking session validity...`);
             
             // Проверяем, что сессия валидна
-            await client.getMe();
+            const me = await client.getMe();
+            console.log(`[Monitor] Client ${userId} session valid, user: ${me.firstName} (${me.id})`);
             
             this.clients.set(userId, client);
             return client;
         } catch (error) {
-            console.error(`Error creating client for user ${userId}:`, error);
+            console.error(`[Monitor] Error creating client for user ${userId}:`, error.message);
             throw error;
         }
     }
@@ -398,9 +402,13 @@ class TelegramMonitor {
                 throw new Error('Monitor settings not found');
             }
 
-            // Создаем клиент если его еще нет
+            // Создаем клиент если его еще нет или если существующий отключён
             let client = this.clients.get(userId);
-            if (!client) {
+            if (!client || client.disconnected) {
+                if (client) {
+                    console.log(`[Monitor] Existing client for user ${userId} is disconnected, recreating...`);
+                    this.clients.delete(userId);
+                }
                 client = await this.createClientFromSession(
                     userId,
                     user.api_id,
