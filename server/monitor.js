@@ -448,6 +448,9 @@ class TelegramMonitor {
 
             // Сохраняем обработчик для возможности отключения
             client._scoutHandler = handler;
+            
+            // Проверяем состояние клиента
+            console.log(`[Monitor] Client for user ${userId} connected: ${client.connected}, disconnected: ${client.disconnected}`);
 
             // Активируем пользователя
             await database.users.setActive(userId, true);
