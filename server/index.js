@@ -547,6 +547,30 @@ app.get('/api/monitoring/status/:userId', async (req, res) => {
     }
 });
 
+/**
+ * Диагностика сессии пользователя
+ */
+app.get('/api/diagnose/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const dbUserId = parseInt(userId);
+
+        if (isNaN(dbUserId)) {
+            return res.status(400).json({ success: false, error: 'Invalid userId' });
+        }
+
+        const result = await monitor.diagnoseSession(dbUserId);
+        res.json(result);
+
+    } catch (error) {
+        console.error('Error in diagnose:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 // Главная страница
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'client', 'index.html'));

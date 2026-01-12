@@ -771,6 +771,99 @@ class TelegramMonitor {
         
         this.clients.clear();
     }
+
+    /**
+     * Диагностика сессии пользователя
+     */
+    async diagnoseSession(userId) {
+        try {
+            const user = await database.users.getById(userId);
+            if (!user) {
+                return { success: false, error: 'User not found' };
+            }
+
+            if (!user.session_string) {
+                return { success: false, error: 'No session string saved' };
+            }
+
+            console.log(`[Diagnose] Testing session for user ${userId}...`);
+
+            // Создаём тестовый клиент
+            const client = new TelegramClient(
+                new StringSession(user.session_string),
+                parseInt(user.api_id),
+                user.api_hash,
+                {
+                    connectionRetries: 3,
+                    useWSS: false,
+                    deviceModel: 'Diagnose Tool',
+                    systemVersion: 'Node.js',
+                    appVersion: '1.0.0'
+                }
+            );
+
+            await client.connect();
+            console.log(`[Diagnose] Connected`);
+
+            // Проверяем авторизацию
+            const me = await client.getMe();
+            console.log(`[Diagnose] Authorized as: ${me.firstName} ${me.lastName || ''} (@${me.username || 'no username'})`);
+
+            // Получаем состояние updates
+            const state = await client.invoke(new Api.updates.GetState());
+            console.log(`[Diagnose] Updates state: pts=${state.pts}, qts=${state.qts}, seq=${state.seq}`);
+
+            // Получаем диалоги
+            const dialogs = await client.getDialogs({ limit: 10 });
+            console.log(`[Diagnose] Got ${dialogs.length} dialogs`);
+
+            // Проверяем настройки мониторинга
+            const settings = await database.monitors.getByUserId(userId);
+            let folderCheck = null;
+            if (settings && settings.folder_name) {
+                const foldersResult = await this.getChatsFromFolder(client, settings.folder_name);
+                if (foldersResult.success) {
+                    folderCheck = {
+                        folderName: settings.folder_name,
+                        chatsCount: foldersResult.chats.length,
+                        chats: foldersResult.chats.slice(0, 5).map(c => ({ id: c.id, title: c.title }))
+                    };
+                    console.log(`[Diagnose] Folder "${settings.folder_name}" has ${foldersResult.chats.length} chats`);
+                } else {
+                    folderCheck = { folderName: settings.folder_name, error: foldersResult.error };
+                    console.log(`[Diagnose] Folder error: ${foldersResult.error}`);
+                }
+            }
+
+            // Закрываем тестовый клиент
+            await client.disconnect();
+
+            return {
+                success: true,
+                user: {
+                    id: me.id.toString(),
+                    firstName: me.firstName,
+                    lastName: me.lastName,
+                    username: me.username,
+                    phone: me.phone
+                },
+                state: {
+                    pts: state.pts,
+                    qts: state.qts,
+                    seq: state.seq
+                },
+                dialogsCount: dialogs.length,
+                folderCheck
+            };
+
+        } catch (error) {
+            console.error(`[Diagnose] Error:`, error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
 }
 
 module.exports = TelegramMonitor;
