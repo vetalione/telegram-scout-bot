@@ -368,7 +368,12 @@ class TelegramMonitor {
                 apiHash,
                 {
                     connectionRetries: 5,
-                    useWSS: false
+                    useWSS: false,
+                    // Уникальные параметры для каждого клиента
+                    deviceModel: `ScoutBot-User${userId}`,
+                    systemVersion: 'Node.js',
+                    appVersion: `1.0.${userId}`,
+                    langCode: 'en'
                 }
             );
             
