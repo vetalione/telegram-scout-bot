@@ -373,11 +373,7 @@ class TelegramMonitor {
             );
             
             await client.connect();
-            console.log(`[Monitor] Client ${userId} connected, checking session validity...`);
-            
-            // Проверяем, что сессия валидна
-            const me = await client.getMe();
-            console.log(`[Monitor] Client ${userId} session valid, user: ${me.firstName} (${me.id})`);
+            console.log(`[Monitor] Client ${userId} connected successfully`);
             
             this.clients.set(userId, client);
             return client;
