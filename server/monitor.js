@@ -375,23 +375,10 @@ class TelegramMonitor {
             await client.connect();
             console.log(`[Monitor] Client ${userId} connected`);
             
-            // Проверяем авторизацию и инициализируем получение обновлений
+            // Проверяем авторизацию
             try {
                 const state = await client.invoke(new Api.updates.GetState());
-                console.log(`[Monitor] Client ${userId} authorized (pts=${state.pts}, qts=${state.qts}, date=${state.date})`);
-                
-                // Вызываем getDifference чтобы "разбудить" получение обновлений
-                // Это критично для восстановления потока updates после переподключения
-                try {
-                    await client.invoke(new Api.updates.GetDifference({
-                        pts: state.pts,
-                        date: state.date,
-                        qts: state.qts
-                    }));
-                    console.log(`[Monitor] Client ${userId} ready for updates`);
-                } catch (diffError) {
-                    console.log(`[Monitor] Client ${userId} getDifference: ${diffError.message}`);
-                }
+                console.log(`[Monitor] Client ${userId} authorized (pts=${state.pts})`);
             } catch (authError) {
                 console.error(`[Monitor] Client ${userId} authorization check failed:`, authError.message);
                 if (authError.message.includes('AUTH_KEY_UNREGISTERED') || 
