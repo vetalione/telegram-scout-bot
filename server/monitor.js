@@ -732,13 +732,16 @@ class TelegramMonitor {
         console.log(`Found ${activeUsers.length} active users in database:`, 
             activeUsers.map(u => ({ id: u.id, phone: u.phone, hasSession: !!u.session_string })));
         
+        // Сортируем по ID чтобы порядок был предсказуемым
+        activeUsers.sort((a, b) => a.id - b.id);
+        
         for (const user of activeUsers) {
             try {
                 await this.startMonitoring(user.id);
                 console.log(`Restored monitoring for user ${user.id}`);
                 
-                // Небольшая задержка между подключениями
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Увеличиваем задержку между подключениями до 5 секунд
+                await new Promise(resolve => setTimeout(resolve, 5000));
             } catch (error) {
                 console.error(`Failed to restore monitoring for user ${user.id}:`, error);
             }
