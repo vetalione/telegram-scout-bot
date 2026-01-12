@@ -481,8 +481,11 @@ class TelegramMonitor {
             // Сохраняем обработчик для возможности отключения
             client._scoutHandler = handler;
             
-            // Проверяем состояние клиента
+            // Проверяем состояние клиента и количество handlers
+            const handlers = client.listEventHandlers();
             console.log(`[Monitor] Client for user ${userId} connected: ${client.connected}, disconnected: ${client.disconnected}`);
+            console.log(`[Monitor] Client ${userId} has ${handlers.length} event handlers`);
+            console.log(`[Monitor] Total clients in Map: ${this.clients.size}, keys: [${Array.from(this.clients.keys()).join(', ')}]`);
 
             // Активируем пользователя
             await database.users.setActive(userId, true);
