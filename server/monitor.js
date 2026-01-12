@@ -373,7 +373,22 @@ class TelegramMonitor {
             );
             
             await client.connect();
-            console.log(`[Monitor] Client ${userId} connected successfully`);
+            console.log(`[Monitor] Client ${userId} connected`);
+            
+            // Проверяем авторизацию и инициализируем получение обновлений
+            // Это важный вызов который говорит серверу что мы хотим получать updates
+            try {
+                const state = await client.invoke(new Api.updates.GetState());
+                console.log(`[Monitor] Client ${userId} authorized and ready for updates (pts=${state.pts})`);
+            } catch (authError) {
+                console.error(`[Monitor] Client ${userId} authorization check failed:`, authError.message);
+                if (authError.message.includes('AUTH_KEY_UNREGISTERED') || 
+                    authError.message.includes('SESSION_REVOKED') ||
+                    authError.message.includes('USER_DEACTIVATED')) {
+                    throw new Error(`Session for user ${userId} is invalid, needs re-authorization`);
+                }
+                throw authError;
+            }
             
             this.clients.set(userId, client);
             return client;
