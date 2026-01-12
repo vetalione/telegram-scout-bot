@@ -460,9 +460,11 @@ class TelegramMonitor {
                 await this.handleNewMessage(event, userId, user, settings);
             };
 
-            // Слушаем все сообщения (incoming и outgoing) для тестирования
+            // Слушаем все сообщения (incoming и outgoing)
+            // outgoing: true - чтобы видеть и свои сообщения (для тестирования)
             client.addEventHandler(handler, new NewMessage({
-                chats: chatIds
+                chats: chatIds,
+                outgoing: true
             }));
 
             // Сохраняем обработчик для возможности отключения
