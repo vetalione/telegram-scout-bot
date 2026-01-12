@@ -367,8 +367,10 @@ class TelegramMonitor {
                 parseInt(apiId),
                 apiHash,
                 {
-                    connectionRetries: 5,
-                    useWSS: false,
+                    connectionRetries: 10,
+                    retryDelay: 2000,
+                    timeout: 30,  // Увеличиваем timeout до 30 секунд
+                    useWSS: true,  // Используем WebSocket вместо TCP
                     // Уникальные параметры для каждого клиента
                     deviceModel: `ScoutBot-User${userId}`,
                     systemVersion: 'Node.js',
