@@ -460,11 +460,10 @@ class TelegramMonitor {
                 await this.handleNewMessage(event, userId, user, settings);
             };
 
-            // Слушаем все сообщения (incoming и outgoing)
-            // outgoing: true - чтобы видеть и свои сообщения (для тестирования)
+            // Слушаем ВСЕ сообщения (и входящие, и исходящие)
+            // Не указываем incoming/outgoing - тогда gramjs слушает все
             client.addEventHandler(handler, new NewMessage({
-                chats: chatIds,
-                outgoing: true
+                chats: chatIds
             }));
 
             // Сохраняем обработчик для возможности отключения
