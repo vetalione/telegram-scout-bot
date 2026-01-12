@@ -34,15 +34,11 @@ class TelegramMonitor {
             apiHash,
             {
                 connectionRetries: 5,
-                retryDelay: 1000,
-                timeout: 30,
-                useWSS: true,  // Используем WebSocket для надёжности
-                floodSleepThreshold: 60, // Автоматически ждём при flood до 60 сек
-                deviceModel: 'Desktop',
-                systemVersion: 'Windows 10',
-                appVersion: '4.16.8',  // Версия как у десктопного клиента
-                langCode: 'en',
-                autoReconnect: false  // Не переподключаться автоматически для auth клиента
+                useWSS: false,
+                deviceModel: 'Scout Bot',
+                systemVersion: 'Node.js',
+                appVersion: '1.0.0',
+                langCode: 'ru'
             }
         );
         
@@ -61,13 +57,7 @@ class TelegramMonitor {
                     phoneNumber: phone,
                     apiId: client.apiId,
                     apiHash: client.apiHash,
-                    settings: new Api.CodeSettings({
-                        allowFlashcall: false,
-                        currentNumber: false,
-                        allowAppHash: true,
-                        allowMissedCall: false,
-                        allowFirebase: false
-                    })
+                    settings: new Api.CodeSettings({})
                 })
             );
             console.log(`[Monitor] Code sent successfully to ${phone}, type: ${result.type?.className}`);
