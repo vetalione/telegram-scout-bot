@@ -600,9 +600,9 @@ class TelegramMonitor {
 
             if (!rawChatId) return;
 
-            // DEBUG: логируем каждое входящее сообщение ДО фильтра, чтобы убедиться
-            // что gramjs вообще передаёт сообщения в handler
-            console.log(`[Monitor] RAW event user ${userId}: chatId=${rawChatId}, monitored=${monitoredChatIds ? monitoredChatIds.has(rawChatId) : 'no-filter'}`);
+            // DEBUG: логируем каждое входящее сообщение ДО фильтра
+            const msgPreviewRaw = message.message?.substring(0, 80) || '[no text]';
+            console.log(`[Monitor] RAW event user ${userId}: chatId=${rawChatId}, monitored=${monitoredChatIds ? monitoredChatIds.has(rawChatId) : 'no-filter'}, text="${msgPreviewRaw}"`);
 
             if (monitoredChatIds && !monitoredChatIds.has(rawChatId)) {
                 // Сообщение из не отслеживаемого чата — пропускаем
