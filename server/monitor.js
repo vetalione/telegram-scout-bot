@@ -401,6 +401,16 @@ class TelegramMonitor {
             
             this.clients.set(userId, client);
 
+            // catchUp() сбрасывает флаг userDisconnected и запускает update loop.
+            // Без этого в gramjs 2.26.x connected=true но disconnected=true одновременно,
+            // и NewMessage события не диспатчатся.
+            try {
+                await client.catchUp();
+                console.log(`[Monitor] Client ${userId} update loop started (catchUp done)`);
+            } catch (e) {
+                console.warn(`[Monitor] catchUp warning for user ${userId}:`, e.message);
+            }
+
             // Periodic health check to detect stuck update loops (TIMEOUTs)
             // If we detect repeated failures, restart the client with backoff
             let consecutiveFailures = 0;
@@ -583,8 +593,12 @@ class TelegramMonitor {
 
             if (!rawChatId) return;
 
+            // DEBUG: логируем каждое входящее сообщение ДО фильтра, чтобы убедиться
+            // что gramjs вообще передаёт сообщения в handler
+            console.log(`[Monitor] RAW event user ${userId}: chatId=${rawChatId}, monitored=${monitoredChatIds ? monitoredChatIds.has(rawChatId) : 'no-filter'}`);
+
             if (monitoredChatIds && !monitoredChatIds.has(rawChatId)) {
-                // Сообщение из не отслеживаемого чата — тихо пропускаем
+                // Сообщение из не отслеживаемого чата — пропускаем
                 return;
             }
 
