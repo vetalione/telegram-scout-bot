@@ -369,13 +369,16 @@ class TelegramMonitor {
                 {
                     connectionRetries: 10,
                     retryDelay: 2000,
-                    timeout: 30,  // Увеличиваем timeout до 30 секунд
-                    useWSS: true,  // Используем WebSocket вместо TCP
+                    timeout: 30,
+                    useWSS: true,
                     // Уникальные параметры для каждого клиента
                     deviceModel: `ScoutBot-User${userId}`,
                     systemVersion: 'Node.js',
                     appVersion: `1.0.${userId}`,
-                    langCode: 'en'
+                    langCode: 'en',
+                    // Ограничиваем кэш сущностей gramjs чтобы предотвратить утечку RAM:
+                    // без лимита кэш растёт бесконечно (тысячи users/chats из 50 чатов)
+                    maxConcurrentDownloads: 1
                 }
             );
             
@@ -397,6 +400,68 @@ class TelegramMonitor {
             }
             
             this.clients.set(userId, client);
+
+            // Periodic health check to detect stuck update loops (TIMEOUTs)
+            // If we detect repeated failures, restart the client with backoff
+            let consecutiveFailures = 0;
+            const maxFailuresBeforeRestart = 3;
+            const baseDelayMs = 2000; // exponential backoff base
+
+            const healthCheck = async () => {
+                try {
+                    // Quick check to ensure updates loop is alive
+                    await client.invoke(new Api.updates.GetState());
+                    if (consecutiveFailures > 0) {
+                        console.log(`[Monitor] Health OK for user ${userId}, resetting failure count`);
+                    }
+                    consecutiveFailures = 0;
+                } catch (err) {
+                    consecutiveFailures++;
+                    console.warn(`[Monitor] Health check failed for user ${userId} (attempt ${consecutiveFailures}):`, err.message);
+
+                    if (consecutiveFailures >= maxFailuresBeforeRestart) {
+                        const delay = baseDelayMs * Math.pow(2, Math.min(consecutiveFailures - maxFailuresBeforeRestart, 6));
+                        console.warn(`[Monitor] Restarting client for user ${userId} after ${delay}ms due to repeated health failures`);
+
+                        try {
+                            await client.disconnect();
+                        } catch (e) {
+                            console.error(`[Monitor] Error while disconnecting client ${userId}:`, e.message);
+                        }
+
+                        // remove from map to signal recreation is needed
+                        this.clients.delete(userId);
+
+                        // Wait then try to recreate via startMonitoring (it handles client creation internally)
+                        setTimeout(async () => {
+                            try {
+                                console.log(`[Monitor] Restarting monitoring for user ${userId} after health restart`);
+                                await this.startMonitoring(userId);
+                            } catch (startErr) {
+                                console.error(`[Monitor] Failed to restart monitoring for user ${userId}:`, startErr.message);
+                            }
+                        }, delay);
+                    }
+                }
+            };
+
+            // run health checks every 5 minutes (снижает egress и нагрузку)
+            client._healthInterval = setInterval(healthCheck, 5 * 60 * 1000);
+
+            // ensure interval is cleared on disconnect
+            const origDisconnect = client.disconnect.bind(client);
+            client.disconnect = async (...args) => {
+                if (client._healthInterval) {
+                    clearInterval(client._healthInterval);
+                    client._healthInterval = null;
+                }
+                try {
+                    return await origDisconnect(...args);
+                } catch (e) {
+                    throw e;
+                }
+            };
+
             return client;
         } catch (error) {
             console.error(`[Monitor] Error creating client for user ${userId}:`, error.message);
@@ -413,6 +478,10 @@ class TelegramMonitor {
             if (!user) {
                 throw new Error('User not found');
             }
+
+            // Реактивируем настройки мониторинга на случай если они были деактивированы через stopMonitoring.
+            // getByUserId фильтрует по is_active = TRUE, поэтому нужно сбросить флаг перед чтением.
+            await database.monitors.setActive(userId, true);
 
             const settings = await database.monitors.getByUserId(userId);
             if (!settings) {
@@ -459,6 +528,14 @@ class TelegramMonitor {
             console.log(`Starting monitoring for user ${userId}, ${chatIds.length} chats`);
             console.log(`Chat IDs to monitor:`, chatIds.map(id => id.toString()));
             console.log(`Keywords for user ${userId}:`, settings.keywords);
+
+            // Удаляем старый обработчик если он есть — предотвращает накопление handler'ов
+            // (каждый повторный вызов startMonitoring иначе добавлял бы новый поверх старого)
+            if (client._scoutHandler) {
+                client.removeEventHandler(client._scoutHandler, new NewMessage({}));
+                client._scoutHandler = null;
+                console.log(`[Monitor] Removed old event handler for user ${userId}`);
+            }
 
             // Устанавливаем обработчик новых сообщений
             const handler = async (event) => {

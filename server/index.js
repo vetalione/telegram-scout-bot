@@ -590,6 +590,9 @@ setInterval(async () => {
         // Очищаем старые уведомления
         await database.notifications.cleanup();
         
+        // Очищаем хеши сообщений старше 24 часов (без этого таблица росла бесконечно)
+        await database.messageHashes.cleanup();
+        
         // Очищаем просроченные клиенты авторизации (старше 30 минут)
         const now = Date.now();
         for (const [sessionId, data] of authClients) {
@@ -600,6 +603,10 @@ setInterval(async () => {
                 authClients.delete(sessionId);
             }
         }
+
+        // Логируем использование памяти для мониторинга утечек
+        const mem = process.memoryUsage();
+        console.log(`[Memory] RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap: ${Math.round(mem.heapUsed / 1024 / 1024)}/${Math.round(mem.heapTotal / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
     } catch (e) {
         console.error('Cleanup error:', e);
     }
