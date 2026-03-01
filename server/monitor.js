@@ -1,6 +1,6 @@
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
-const { NewMessage } = require('telegram/events');
+const { NewMessage, Raw } = require('telegram/events');
 const { computeCheck } = require('telegram/Password');
 const crypto = require('crypto');
 const database = require('./database');
@@ -401,14 +401,21 @@ class TelegramMonitor {
             
             this.clients.set(userId, client);
 
-            // catchUp() сбрасывает флаг userDisconnected и запускает update loop.
-            // Без этого в gramjs 2.26.x connected=true но disconnected=true одновременно,
-            // и NewMessage события не диспатчатся.
-            try {
-                await client.catchUp();
-                console.log(`[Monitor] Client ${userId} update loop started (catchUp done)`);
-            } catch (e) {
-                console.warn(`[Monitor] catchUp warning for user ${userId}:`, e.message);
+            // В gramjs 2.26.x connected=true && disconnected=true одновременно:
+            // TCP-соединение живое, но _sender.userDisconnected=true блокирует update loop.
+            // Сбрасываем флаг напрямую, чтобы события начали диспатчиться.
+            if (client._sender && client._sender.userDisconnected) {
+                console.log(`[Monitor] Resetting userDisconnected flag for user ${userId}`);
+                client._sender.userDisconnected = false;
+            }
+
+            // Raw-хук для диагностики: показывает ВСЕ типы апдейтов от Telegram
+            // Если в логах не видно [RAW] — gramjs не получает никаких данных
+            if (!client._rawDebugHandler) {
+                client._rawDebugHandler = (update) => {
+                    console.log(`[Monitor] [RAW] user ${userId} update: ${update.className}`);
+                };
+                client.addEventHandler(client._rawDebugHandler, new Raw({}));
             }
 
             // Periodic health check to detect stuck update loops (TIMEOUTs)
