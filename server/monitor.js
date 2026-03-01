@@ -488,11 +488,14 @@ class TelegramMonitor {
                 throw new Error('Monitor settings not found');
             }
 
-            // Создаем клиент если его еще нет или если существующий отключён
+            // Создаем клиент если его еще нет или если TCP-соединение не активно.
+            // ВАЖНО: используем !client.connected, а не client.disconnected —
+            // в gramjs 2.26.x disconnected=true даже при живом TCP-соединении (userDisconnected
+            // не сбрасывается корректно), что ранее вызывало бесконечное пересоздание клиентов.
             let client = this.clients.get(userId);
-            if (!client || client.disconnected) {
+            if (!client || !client.connected) {
                 if (client) {
-                    console.log(`[Monitor] Existing client for user ${userId} is disconnected, recreating...`);
+                    console.log(`[Monitor] Existing client for user ${userId} is not connected, recreating...`);
                     this.clients.delete(userId);
                 }
                 client = await this.createClientFromSession(
@@ -515,39 +518,29 @@ class TelegramMonitor {
                 await database.chats.add(userId, chat.id, chat.title, chat.type);
             }
 
-            // Получаем ID чатов для мониторинга
-            const chatIds = chatsResult.chats.map(c => {
-                // Преобразуем ID в правильный формат
-                const id = BigInt(c.id);
-                if (c.type === 'supergroup' || c.type === 'channel') {
-                    return BigInt('-100' + c.id);
-                }
-                return -id;
-            });
+            // Множество отслеживаемых chatId (сырые, без -100) для быстрой проверки в handler'е
+            const monitoredChatIds = new Set(chatsResult.chats.map(c => c.id.toString()));
 
-            console.log(`Starting monitoring for user ${userId}, ${chatIds.length} chats`);
-            console.log(`Chat IDs to monitor:`, chatIds.map(id => id.toString()));
+            console.log(`Starting monitoring for user ${userId}, ${monitoredChatIds.size} chats`);
+            console.log(`Chat IDs to monitor:`, Array.from(monitoredChatIds));
             console.log(`Keywords for user ${userId}:`, settings.keywords);
 
             // Удаляем старый обработчик если он есть — предотвращает накопление handler'ов
-            // (каждый повторный вызов startMonitoring иначе добавлял бы новый поверх старого)
             if (client._scoutHandler) {
                 client.removeEventHandler(client._scoutHandler, new NewMessage({}));
                 client._scoutHandler = null;
                 console.log(`[Monitor] Removed old event handler for user ${userId}`);
             }
 
-            // Устанавливаем обработчик новых сообщений
+            // Устанавливаем обработчик новых сообщений.
+            // ВАЖНО: НЕ передаём chats в NewMessage — gramjs сравнивает по внутреннему
+            // channelId (сырой, без -100), а Bot API формат (-100xxxxxxxx) не совпадает.
+            // Вместо этого фильтруем вручную по monitoredChatIds внутри handleNewMessage.
             const handler = async (event) => {
-                console.log(`[Monitor] New message event received for user ${userId}`);
-                await this.handleNewMessage(event, userId, user, settings);
+                await this.handleNewMessage(event, userId, user, settings, monitoredChatIds);
             };
 
-            // Слушаем ВСЕ сообщения (и входящие, и исходящие)
-            // Не указываем incoming/outgoing - тогда gramjs слушает все
-            client.addEventHandler(handler, new NewMessage({
-                chats: chatIds
-            }));
+            client.addEventHandler(handler, new NewMessage({}));
 
             // Сохраняем обработчик для возможности отключения
             client._scoutHandler = handler;
@@ -578,12 +571,25 @@ class TelegramMonitor {
     /**
      * Обработчик новых сообщений
      */
-    async handleNewMessage(event, userId, userSnapshot, settingsSnapshot) {
+    async handleNewMessage(event, userId, userSnapshot, settingsSnapshot, monitoredChatIds) {
         try {
             const message = event.message;
-            
+
+            // Фильтруем по чатам вручную (вместо gramjs-фильтра chats:[...] который
+            // некорректно сравнивает Bot API -100xxxxxxxx формат с внутренним channelId)
+            const rawChatId = message.peerId?.channelId?.toString() ||
+                              message.peerId?.chatId?.toString() ||
+                              message.chatId?.toString();
+
+            if (!rawChatId) return;
+
+            if (monitoredChatIds && !monitoredChatIds.has(rawChatId)) {
+                // Сообщение из не отслеживаемого чата — тихо пропускаем
+                return;
+            }
+
             const msgPreview = message.message?.substring(0, 100) || '[empty]';
-            console.log(`[Monitor] New message for user ${userId}: "${msgPreview}"`);
+            console.log(`[Monitor] New message for user ${userId} in chat ${rawChatId}: "${msgPreview}"`);
             
             // Считаем обработанное сообщение
             await database.stats.increment('messages_processed');
@@ -632,10 +638,8 @@ class TelegramMonitor {
             // Считаем найденное совпадение
             await database.stats.increment('matches_found');
 
-            // Проверяем, не отправляли ли мы уже это уведомление
-            const chatId = message.peerId?.channelId?.toString() || 
-                          message.peerId?.chatId?.toString() ||
-                          message.chatId?.toString();
+            // Проверяем, не отправляли ли мы уже это уведомление (используем rawChatId из начала функции)
+            const chatId = rawChatId;
             const messageId = message.id.toString();
 
             if (await database.notifications.exists(userId, chatId, messageId)) {
