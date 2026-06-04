@@ -9,6 +9,14 @@ const { KeywordMatcher, formatNotification } = require('./keywords');
 const MAX_CHATS_PER_USER = 50;
 const FLOOD_WAIT_MULTIPLIER = 1.5;
 
+// Подробное логирование каждого входящего сообщения включается только
+// переменной окружения DEBUG_MONITOR=1. В проде оно выключено, чтобы не
+// генерировать тысячи строк логов и не раздувать память/счёт за хостинг.
+const DEBUG_MONITOR = process.env.DEBUG_MONITOR === '1';
+function dlog(...args) {
+    if (DEBUG_MONITOR) console.log(...args);
+}
+
 // Создание хеша текста сообщения для дедупликации
 function createMessageHash(text) {
     // Нормализуем текст: lowercase, убираем пробелы по краям
@@ -409,9 +417,10 @@ class TelegramMonitor {
                 client._sender.userDisconnected = false;
             }
 
-            // Raw-хук для диагностики: показывает ВСЕ типы апдейтов от Telegram
-            // Если в логах не видно [RAW] — gramjs не получает никаких данных
-            if (!client._rawDebugHandler) {
+            // Raw-хук для диагностики: показывает ВСЕ типы апдейтов от Telegram.
+            // ВКЛЮЧАЕТСЯ только при DEBUG_RAW=1 — в проде он подписывается на каждый
+            // апдейт и логирует его, что зря нагружает память/CPU и раздувает счёт Railway.
+            if (process.env.DEBUG_RAW === '1' && !client._rawDebugHandler) {
                 client._rawDebugHandler = (update) => {
                     console.log(`[Monitor] [RAW] user ${userId} update: ${update.className}`);
                 };
@@ -600,24 +609,23 @@ class TelegramMonitor {
 
             if (!rawChatId) return;
 
-            // DEBUG: логируем каждое входящее сообщение ДО фильтра
-            const msgPreviewRaw = message.message?.substring(0, 80) || '[no text]';
-            console.log(`[Monitor] RAW event user ${userId}: chatId=${rawChatId}, monitored=${monitoredChatIds ? monitoredChatIds.has(rawChatId) : 'no-filter'}, text="${msgPreviewRaw}"`);
-
+            // Быстрый фильтр по отслеживаемым чатам ДО любых логов/запросов в БД
             if (monitoredChatIds && !monitoredChatIds.has(rawChatId)) {
                 // Сообщение из не отслеживаемого чата — пропускаем
                 return;
             }
 
-            const msgPreview = message.message?.substring(0, 100) || '[empty]';
-            console.log(`[Monitor] New message for user ${userId} in chat ${rawChatId}: "${msgPreview}"`);
+            if (DEBUG_MONITOR) {
+                const msgPreview = message.message?.substring(0, 100) || '[empty]';
+                dlog(`[Monitor] New message for user ${userId} in chat ${rawChatId}: "${msgPreview}"`);
+            }
             
             // Считаем обработанное сообщение
             await database.stats.increment('messages_processed');
             
             // Пропускаем сервисные сообщения
             if (!message.message || message.message.length === 0) {
-                console.log(`[Monitor] Skipping: empty message`);
+                dlog(`[Monitor] Skipping: empty message`);
                 return;
             }
             
@@ -625,7 +633,7 @@ class TelegramMonitor {
             // чтобы получить актуальный bot_chat_id (мог обновиться после /start)
             const user = await database.users.getById(userId);
             if (!user) {
-                console.log(`[Monitor] User ${userId} not found in DB`);
+                dlog(`[Monitor] User ${userId} not found in DB`);
                 return;
             }
 
@@ -633,24 +641,24 @@ class TelegramMonitor {
             // чтобы получить актуальные ключевые слова (могли обновиться через веб-форму)
             const settings = await database.monitors.getByUserId(userId);
             if (!settings) {
-                console.log(`[Monitor] Settings for user ${userId} not found in DB`);
+                dlog(`[Monitor] Settings for user ${userId} not found in DB`);
                 return;
             }
 
             // Проверяем на соответствие ключевым словам
             const keywords = settings.keywords;
-            console.log(`[Monitor] Keywords to check:`, JSON.stringify(keywords));
-            console.log(`[Monitor] Message text: "${message.message}"`);
+            dlog(`[Monitor] Keywords to check:`, JSON.stringify(keywords));
+            dlog(`[Monitor] Message text: "${message.message}"`);
             
             const matchResult = this.keywordMatcher.analyze(message.message, {
                 keywords: keywords
             });
 
-            console.log(`[Monitor] Match result: matched=${matchResult.matched}, keywords=${JSON.stringify(matchResult.matchedKeywords)}`);
-            console.log(`[Monitor] Match details:`, JSON.stringify(matchResult.matchDetails, null, 2));
+            dlog(`[Monitor] Match result: matched=${matchResult.matched}, keywords=${JSON.stringify(matchResult.matchedKeywords)}`);
+            dlog(`[Monitor] Match details:`, JSON.stringify(matchResult.matchDetails, null, 2));
 
             if (!matchResult.matched) {
-                console.log(`[Monitor] No keyword match, skipping`);
+                dlog(`[Monitor] No keyword match, skipping`);
                 return;
             }
             
